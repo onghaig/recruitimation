@@ -28,6 +28,32 @@ export interface ScoreInput {
 }
 
 /**
+ * Parse JSON out of an LLM response, tolerating markdown fences and prose
+ * wrapped around the object. Returns `fallback` instead of throwing when the
+ * output can't be parsed, so a single malformed response never crashes the
+ * scoring pipeline (this runs inside the BullMQ worker and the /api/parse route).
+ */
+export function parseJsonLoose<T>(raw: string, fallback: T): T {
+  const stripped = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  // Try the whole stripped string first, then the first {...} block if the
+  // model added prose around it.
+  const candidates = [stripped]
+  const first = stripped.indexOf('{')
+  const last = stripped.lastIndexOf('}')
+  if (first !== -1 && last > first) candidates.push(stripped.slice(first, last + 1))
+
+  for (const c of candidates) {
+    try {
+      return JSON.parse(c) as T
+    } catch {
+      // try next candidate
+    }
+  }
+  console.warn('[score] Could not parse LLM JSON output; using fallback. Raw:', raw.slice(0, 300))
+  return fallback
+}
+
+/**
  * Ask Claude to estimate willingness score (0-100) and surface flags.
  */
 export async function scoreWillingness(input: ScoreInput): Promise<WillingnessResult> {
@@ -58,9 +84,11 @@ Reward: exact title match, local, recently active, similar pay history, gaps in 
   })
 
   const text = message.choices[0].message.content ?? ''
-  // Strip any markdown fences if present
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  return JSON.parse(cleaned) as WillingnessResult
+  return parseJsonLoose<WillingnessResult>(text, {
+    willing_score: 0,
+    flags: ['scoring_unavailable'],
+    reasoning: 'Model output could not be parsed.',
+  })
 }
 
 /**
@@ -115,6 +143,12 @@ ${rawText.slice(0, 8000)}`
   })
 
   const text = message.choices[0].message.content ?? ''
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  return JSON.parse(cleaned)
+  return parseJsonLoose(text, {
+    name: null,
+    email: null,
+    phone: null,
+    location: null,
+    jobs: [],
+    skills: [],
+  })
 }

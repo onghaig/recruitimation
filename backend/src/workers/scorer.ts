@@ -8,7 +8,7 @@ import { Worker, Queue } from 'bullmq'
 import { Redis as IORedis } from 'ioredis'
 import { prisma } from '../db/client.js'
 import { computeMatchScore } from '../ai/embed.js'
-import { scoreWillingness, generateSummary } from '../ai/score.js'
+import { scoreWillingness, generateSummary, parseCandidate } from '../ai/score.js'
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379'
 const connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null })
@@ -45,8 +45,30 @@ const worker = new Worker<ScoreJobData>(
     // Step 1 — compute match score via embeddings
     const matchScore = await computeMatchScore(jobRecord.description, candidate.rawText)
 
-    // Step 2 — willingness score via Claude
-    const jobsArray = Array.isArray(candidate.jobsJson) ? candidate.jobsJson : []
+    // Step 2 — ensure structured job history. Extension-ingested candidates
+    // only carry a thin scrape (name/title/snippet) with null jobsJson, which
+    // starves the willingness model. Parse them here, mirroring /api/parse.
+    let jobsArray = Array.isArray(candidate.jobsJson) ? candidate.jobsJson : []
+    let skillsArray = Array.isArray(candidate.skillsJson) ? candidate.skillsJson : []
+    const parsedFields: {
+      name?: string | null
+      email?: string | null
+      phone?: string | null
+      location?: string | null
+    } = {}
+
+    if (jobsArray.length === 0) {
+      const parsed = await parseCandidate(candidate.rawText)
+      jobsArray = parsed.jobs ?? []
+      skillsArray = parsed.skills ?? []
+      // Backfill contact fields only where the scrape left them empty.
+      if (!candidate.name && parsed.name) parsedFields.name = parsed.name
+      if (!candidate.email && parsed.email) parsedFields.email = parsed.email
+      if (!candidate.phone && parsed.phone) parsedFields.phone = parsed.phone
+      if (!candidate.location && parsed.location) parsedFields.location = parsed.location
+    }
+
+    // Step 3 — willingness score
     const firstJob = jobsArray[0] as
       | { role?: string; employer?: string; start?: string; end?: string }
       | undefined
@@ -59,18 +81,21 @@ const worker = new Worker<ScoreJobData>(
       employer: firstJob?.employer,
       duration:
         firstJob?.start && firstJob?.end ? `${firstJob.start} – ${firstJob.end}` : undefined,
-      jobsJson: candidate.jobsJson,
+      jobsJson: jobsArray,
       distanceMi: candidate.distanceMi ? Number(candidate.distanceMi) : null,
       resumeLastActive: candidate.resumeLastActive?.toISOString().split('T')[0] ?? null,
     })
 
-    // Step 3 — one-line summary via Claude
+    // Step 4 — one-line summary via Claude
     const aiSummary = await generateSummary(candidate.rawText, jobRecord.title)
 
-    // Step 4 — write back to DB
+    // Step 5 — write back to DB
     await prisma.candidate.update({
       where: { id: candidateId },
       data: {
+        ...parsedFields,
+        jobsJson: jobsArray,
+        skillsJson: skillsArray,
         matchScore,
         willingScore: willingnessResult.willing_score,
         aiSummary,
