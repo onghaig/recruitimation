@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Recrutimation — Indeed profile capture test fixture</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 920px; }
+  h1 { font-size: 1.2rem; } h2 { font-size: 1rem; margin-top: 1.5rem; }
+  .bar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: 1rem 0; }
+  input { padding: .4rem .5rem; border: 1px solid #ccc; border-radius: 6px; }
+  input.url { width: 320px; }
+  button { padding: .45rem .8rem; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow: auto; white-space: pre-wrap; }
+  .profile { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+  .muted { color: #64748b; } .ok { color: #16a34a; } .err { color: #dc2626; }
+</style>
+</head>
+<body>
+  <h1>Indeed profile capture — test fixture</h1>
+  <p class="muted">
+    Mimics an applicant <b>profile</b> page. The capture logic below is copied verbatim from
+    <code>extension/content/indeed_profile.js</code>. Clicking "Run capture" runs the real
+    <code>scrapeDetail()</code> / <code>findPdfUrl()</code> / <code>blobToBase64()</code>, then
+    POSTs <code>/api/candidates/by-source/enrich</code> and uploads the résumé to
+    <code>/api/candidates/by-source/pdf</code> — the full behind-the-click path, no Indeed needed.
+  </p>
+
+  <div class="bar">
+    <label>Backend: <input class="url" id="api" value="http://localhost:3000" /></label>
+    <label>source_id: <input id="sid" value="appl-pdf-1" size="14" /></label>
+    <button id="run">Run capture (enrich + PDF)</button>
+  </div>
+  <p class="muted">Use a <code>source_id</code> that already exists in your backend (ingest one first).
+    Default <code>appl-pdf-1</code> matches the verification candidate.</p>
+
+  <pre id="out">Results will appear here…</pre>
+
+  <!-- ── Fake Indeed profile DOM (the real selectors target these) ── -->
+  <div class="profile">
+    <div data-testid="applicant-name">Nina Park</div>
+    <div data-testid="applicant-location">Columbus, OH</div>
+    <div data-testid="applicant-phone">(614) 555-0144</div>
+    <div data-testid="applicant-email">nina.park@email.com</div>
+    <div data-testid="resume">
+      <h3>Experience</h3>
+      <p>Forklift Operator — Honda Manufacturing, Marysville OH (2019–Present).
+      7 years forklift operation, sit-down and stand-up certified, RF scanner, pallet jack,
+      lifts 60 lbs, zero safety incidents, reliable attendance.</p>
+      <p>Warehouse Associate — Target DC, Columbus OH (2016–2019).
+      Order picking, inventory control, forklift certified.</p>
+      <p>Skills: forklift, RF scanner, pallet jack, safety, inventory. Last active 1 day ago.</p>
+    </div>
+    <!-- résumé PDF embed; src is set to a blob URL at load so findPdfUrl() detects it -->
+    <embed id="pdfembed" type="application/pdf" />
+  </div>
+
+<script>
+  // ───── functions copied verbatim from content/indeed_profile.js ─────
+  function pick(...selectors) {
+    for (const s of selectors) {
+      const el = document.querySelector(s)
+      const t = el?.innerText?.trim()
+      if (t) return t
+    }
+    return undefined
+  }
+  function scrapeDetail() {
+    const containers = ['[data-testid="resume"]','[data-testid="applicant-resume"]','[data-testid="resume-section"]','#resume','main']
+    let text = ''
+    for (const s of containers) {
+      const el = document.querySelector(s)
+      const t = el?.innerText?.trim()
+      if (t && t.length > text.length) text = t
+    }
+    if (!text) text = (document.body.innerText || '').trim()
+    const email = pick('[data-testid="applicant-email"]') || (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0]
+    const phone = pick('[data-testid="applicant-phone"]') || (text.match(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0]
+    return { raw_text: text.slice(0, 12000), name: pick('[data-testid="applicant-name"]'), email, phone, location: pick('[data-testid="applicant-location"]') }
+  }
+  function findPdfUrl() {
+    const a = document.querySelector('a[href$=".pdf"], a[href*=".pdf?"], a[download][href*="resume"], a[href*="/resume"][href*="pdf"]')
+    if (a) return a.href
+    const emb = document.querySelector('embed[type="application/pdf"], iframe[src*=".pdf"], object[data*=".pdf"]')
+    return emb?.src || emb?.getAttribute('data') || null
+  }
+  async function blobToBase64(blob) {
+    const buf = await blob.arrayBuffer()
+    const bytes = new Uint8Array(buf)
+    let bin = ''; const CHUNK = 0x8000
+    for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
+    return btoa(bin)
+  }
+  // ────────────────────────────────────────────────────────────────────
+
+  // Build a minimal résumé PDF blob and wire it to the embed (so findPdfUrl finds it).
+  const pdfText = '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n'
+    + '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n'
+    + '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 144]/Contents 4 0 R>>endobj\n'
+    + '4 0 obj<</Length 52>>stream\nBT /F1 18 Tf 20 100 Td (Nina Park resume) Tj ET\nendstream endobj\ntrailer<</Root 1 0 R>>\n%%EOF'
+  const pdfBlob = new Blob([pdfText], { type: 'application/pdf' })
+  document.getElementById('pdfembed').src = URL.createObjectURL(pdfBlob)
+
+  const out = document.getElementById('out')
+  document.getElementById('run').onclick = async () => {
+    const base = document.getElementById('api').value.trim().replace(/\/$/, '')
+    const source_id = document.getElementById('sid').value.trim()
+    const log = (s) => { out.textContent += s + '\n' }
+    out.textContent = ''
+
+    // 1) scrape + enrich
+    const detail = scrapeDetail()
+    log('scrapeDetail() →\n' + JSON.stringify(detail, null, 2))
+    try {
+      const r = await fetch(base + '/api/candidates/by-source/enrich', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'indeed', source_id, ...detail }),
+      })
+      const b = await r.json()
+      log((r.ok ? '✓ enrich HTTP ' : '✗ enrich HTTP ') + r.status + ' → ' + JSON.stringify(b))
+    } catch (e) { log('✗ enrich failed: ' + e.message) }
+
+    // 2) find + download + upload PDF
+    const pdfUrl = findPdfUrl()
+    log('\nfindPdfUrl() → ' + pdfUrl)
+    if (!pdfUrl) { log('no PDF found'); return }
+    try {
+      const blob = await (await fetch(pdfUrl, { credentials: 'include' })).blob()
+      const base64 = await blobToBase64(blob)
+      log('downloaded ' + blob.size + ' bytes, base64 length ' + base64.length)
+      // same as utils/api.js uploadPdfBySource
+      const bin = atob(base64); const u8 = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
+      const fd = new FormData()
+      fd.append('source', 'indeed'); fd.append('source_id', source_id)
+      fd.append('file', new Blob([u8], { type: 'application/pdf' }), source_id + '.pdf')
+      const r = await fetch(base + '/api/candidates/by-source/pdf', { method: 'POST', body: fd })
+      const b = await r.json()
+      log((r.ok ? '✓ pdf upload HTTP ' : '✗ pdf upload HTTP ') + r.status + ' → ' + JSON.stringify(b))
+      log('\nDone. Open the dashboard → this candidate: résumé text is enriched, a PDF is attached, and it re-scores within ~30–60s.')
+    } catch (e) { log('✗ pdf path failed: ' + e.message) }
+  }
+</script>
+</body>
+</html>

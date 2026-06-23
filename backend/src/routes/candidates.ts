@@ -13,6 +13,17 @@ const DecisionSchema = z.object({
   pinRemind: z.string().optional(), // ISO date string
 })
 
+const EnrichSchema = z.object({
+  source: z.enum(['indeed', 'linkedin', 'paste']).optional(),
+  source_id: z.string().min(1),
+  job_id: z.string().uuid().optional(),
+  raw_text: z.string().optional(),
+  name: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  location: z.string().optional(),
+})
+
 const ParseAndScoreSchema = z.object({
   rawText: z.string().min(1),
   jobDescription: z.string().min(1),
@@ -136,6 +147,80 @@ export async function candidateRoutes(fastify: FastifyInstance) {
       return { pdfKey }
     }
   )
+
+  // POST /api/candidates/by-source/pdf — upload a PDF keyed by the platform's
+  // applicant id, so the extension doesn't need the internal candidate UUID.
+  // Multipart: send fields (source_id, source?, job_id?) BEFORE the file part.
+  fastify.post('/api/candidates/by-source/pdf', async (req, reply) => {
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ error: 'No file uploaded' })
+
+    const fields = data.fields as Record<string, { value?: string } | undefined>
+    const sourceId = fields.source_id?.value
+    const source = fields.source?.value
+    const jobId = fields.job_id?.value
+    if (!sourceId) return reply.status(400).send({ error: 'source_id field required' })
+
+    const candidate = await prisma.candidate.findFirst({
+      where: {
+        sourceId,
+        ...(source ? { source } : {}),
+        ...(jobId ? { jobId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!candidate) return reply.status(404).send({ error: 'No candidate for that source_id' })
+
+    const buffer = await data.toBuffer()
+    const pdfKey = await uploadPdf(candidate.id, buffer, data.mimetype)
+    await prisma.candidate.update({ where: { id: candidate.id }, data: { pdfKey } })
+
+    return { candidateId: candidate.id, pdfKey }
+  })
+
+  // POST /api/candidates/by-source/enrich — attach richer detail scraped from
+  // an applicant's profile page (behind-click data) keyed by source_id. Clears
+  // the structured JSON so the scoring worker re-parses the fuller text.
+  fastify.post('/api/candidates/by-source/enrich', async (req, reply) => {
+    const body = EnrichSchema.parse(req.body)
+
+    const candidate = await prisma.candidate.findFirst({
+      where: {
+        sourceId: body.source_id,
+        ...(body.source ? { source: body.source } : {}),
+        ...(body.job_id ? { jobId: body.job_id } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!candidate) return reply.status(404).send({ error: 'No candidate for that source_id' })
+
+    // Keep whichever resume text is richer (the profile page is usually longer).
+    const incoming = body.raw_text ?? ''
+    const rawText =
+      incoming.length > (candidate.rawText?.length ?? 0) ? incoming : candidate.rawText
+
+    await prisma.candidate.update({
+      where: { id: candidate.id },
+      data: {
+        rawText,
+        name: candidate.name ?? body.name,
+        email: candidate.email ?? body.email,
+        phone: candidate.phone ?? body.phone,
+        location: candidate.location ?? body.location,
+        // Force the worker to re-parse jobs/skills from the richer text.
+        jobsJson: [],
+        skillsJson: [],
+      },
+    })
+
+    let rescored = false
+    if (candidate.jobId) {
+      await scoreQueue.add('score', { candidateId: candidate.id, jobId: candidate.jobId })
+      rescored = true
+    }
+
+    return { candidateId: candidate.id, rescored }
+  })
 
   // POST /api/candidates/:id/decision — save keep/pin/skip
   fastify.post<{ Params: { id: string } }>('/api/candidates/:id/decision', async (req, reply) => {

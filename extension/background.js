@@ -5,7 +5,7 @@
  * Also handles popup requests for sync status.
  */
 
-import { ingest } from './utils/api.js'
+import { ingest, enrich, uploadPdfBySource } from './utils/api.js'
 
 // ── State ─────────────────────��──────────────────────���─────────────────────
 let syncStats = {
@@ -30,6 +30,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, error: err.message })
       })
     // Return true to keep channel open for async response
+    return true
+  }
+
+  if (message.type === 'ENRICH') {
+    enrich(message.payload)
+      .then((result) => {
+        syncStats.lastSync = new Date().toISOString()
+        syncStats.lastError = null
+        sendResponse({ ok: true, result })
+      })
+      .catch((err) => {
+        console.error('[Recrutimation/Background] Enrich failed:', err.message)
+        syncStats.lastError = err.message
+        sendResponse({ ok: false, error: err.message })
+      })
+    return true
+  }
+
+  if (message.type === 'INGEST_PDF') {
+    uploadPdfBySource(message.payload)
+      .then((result) => {
+        syncStats.lastSync = new Date().toISOString()
+        syncStats.lastError = null
+        sendResponse({ ok: true, result })
+      })
+      .catch((err) => {
+        console.error('[Recrutimation/Background] PDF upload failed:', err.message)
+        syncStats.lastError = err.message
+        sendResponse({ ok: false, error: err.message })
+      })
     return true
   }
 

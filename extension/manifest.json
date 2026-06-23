@@ -8,7 +8,8 @@
     "https://employers.indeed.com/*",
     "https://www.linkedin.com/talent/*",
     "https://www.linkedin.com/hiring/*",
-    "http://localhost:3000/*"
+    "http://localhost:3000/*",
+    "https://backend-production-a0d3.up.railway.app/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -18,6 +19,11 @@
     {
       "matches": ["https://employers.indeed.com/*"],
       "js": ["content/indeed.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://employers.indeed.com/*/applicants/*"],
+      "js": ["content/indeed_profile.js"],
       "run_at": "document_idle"
     },
     {
@@ -32,10 +38,7 @@
   "web_accessible_resources": [
     {
       "resources": ["interceptor.js"],
-      "matches": [
-        "https://www.linkedin.com/talent/*",
-        "https://www.linkedin.com/hiring/*"
-      ]
+      "matches": ["https://www.linkedin.com/*"]
     }
   ],
   "action": {

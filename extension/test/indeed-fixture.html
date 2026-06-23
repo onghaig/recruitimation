@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Recrutimation — Indeed scraper test fixture</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 900px; }
+    h1 { font-size: 1.2rem; }
+    .bar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: 1rem 0; }
+    input { padding: .4rem .5rem; border: 1px solid #ccc; border-radius: 6px; }
+    input.url { width: 380px; }
+    button { padding: .45rem .8rem; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    button.secondary { background: #475569; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow: auto; }
+    .applicant-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: .75rem 1rem; margin: .5rem 0; }
+    .applicant-name { font-weight: 600; }
+    .muted { color: #64748b; }
+    #out { white-space: pre-wrap; }
+    .ok { color: #16a34a; } .err { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <h1>Indeed scraper test fixture</h1>
+  <p class="muted">
+    This page mimics the DOM of <code>employers.indeed.com/jobs/:jobId/applicants</code>
+    using the same <code>data-testid</code> attributes the real content script targets.
+    The scrape logic below is copied verbatim from <code>extension/content/indeed.js</code>,
+    so a green result here means the selectors work. No Indeed account needed.
+  </p>
+
+  <div class="bar">
+    <button id="scrape">1. Scrape this page</button>
+    <span class="muted">→ runs the real selectors, shows the candidate JSON</span>
+  </div>
+
+  <div class="bar">
+    <input class="url" id="api" value="https://backend-production-a0d3.up.railway.app" />
+    <input id="jobid" placeholder="internal job UUID (from dashboard)" size="38" />
+    <button class="secondary" id="send">2. POST to /api/ingest</button>
+  </div>
+  <p class="muted">
+    For step 2, paste a real job's UUID (create one in the dashboard or via
+    <code>POST /api/jobs</code>) so the ingested candidates attach to it and get scored.
+    Leave it blank to test ingest plumbing only (candidates created unscored).
+  </p>
+
+  <pre id="out">Results will appear here…</pre>
+
+  <hr />
+
+  <!-- ── Fake applicant list (matches Indeed's data-testid structure) ── -->
+  <div id="applicant-list">
+    <div data-testid="applicant-card" class="applicant-card">
+      <a href="/jobs/PROD-1/applicants/55501">open</a>
+      <div data-testid="applicant-name" class="applicant-name">Maria Alvarez</div>
+      <div data-testid="applicant-headline">Forklift Operator</div>
+      <div data-testid="resume-snippet">6 years forklift, RF scanner, pallet jack, sit-down & stand-up certified, lifts 50 lbs</div>
+      <div data-testid="applicant-location">Columbus, OH</div>
+      <div data-testid="resume-updated">Active 2 days ago</div>
+    </div>
+    <div data-testid="applicant-card" class="applicant-card">
+      <a href="/jobs/PROD-1/applicants/55502">open</a>
+      <div data-testid="applicant-name" class="applicant-name">Devon Wright</div>
+      <div data-testid="applicant-headline">Warehouse Associate</div>
+      <div data-testid="resume-snippet">3 years warehouse, order picking, forklift certified, reliable attendance</div>
+      <div data-testid="applicant-location">Reynoldsburg, OH</div>
+      <div data-testid="resume-updated">Active 1 week ago</div>
+    </div>
+    <div data-testid="applicant-card" class="applicant-card">
+      <a href="/jobs/PROD-1/applicants/55503">open</a>
+      <div data-testid="applicant-name" class="applicant-name">Tyler Brooks</div>
+      <div data-testid="applicant-headline">Line Cook</div>
+      <div data-testid="resume-snippet">Restaurant kitchen, fast paced, no warehouse experience</div>
+      <div data-testid="applicant-location">Dayton, OH</div>
+      <div data-testid="resume-updated">Active 3 months ago</div>
+    </div>
+  </div>
+
+  <script>
+    // ───── Logic copied verbatim from extension/content/indeed.js ─────
+    const CARD_SELECTOR     = '[data-testid="applicant-card"]'
+    const NAME_SELECTOR     = '[data-testid="applicant-name"]'
+    const TITLE_SELECTOR    = '[data-testid="applicant-headline"]'
+    const SNIPPET_SELECTOR  = '[data-testid="resume-snippet"]'
+    const LOCATION_SELECTOR = '[data-testid="applicant-location"]'
+    const UPDATED_SELECTOR  = '[data-testid="resume-updated"]'
+    const LINK_SELECTOR     = 'a[href*="/applicants/"]'
+
+    function extractApplicantId(href) {
+      if (!href) return null
+      const match = href.match(/\/applicants\/([^/?#]+)/)
+      return match ? match[1] : null
+    }
+    function scrapeApplicants() {
+      const cards = [...document.querySelectorAll(CARD_SELECTOR)]
+      return cards.map((card) => {
+        const link = card.querySelector(LINK_SELECTOR)
+        return {
+          source_id:   extractApplicantId(link?.getAttribute('href')),
+          name:        card.querySelector(NAME_SELECTOR)?.innerText.trim() ?? null,
+          title:       card.querySelector(TITLE_SELECTOR)?.innerText.trim() ?? null,
+          snippet:     card.querySelector(SNIPPET_SELECTOR)?.innerText.trim() ?? null,
+          location:    card.querySelector(LOCATION_SELECTOR)?.innerText.trim() ?? null,
+          last_active: card.querySelector(UPDATED_SELECTOR)?.innerText.trim() ?? null,
+        }
+      }).filter((c) => c.source_id || c.name)
+    }
+    // ──────────────────────────────────────────────────────────────────
+
+    const out = document.getElementById('out')
+    let lastScrape = []
+
+    document.getElementById('scrape').onclick = () => {
+      lastScrape = scrapeApplicants()
+      out.innerHTML = '<span class="ok">Scraped ' + lastScrape.length + ' candidates:</span>\n'
+        + JSON.stringify(lastScrape, null, 2)
+    }
+
+    document.getElementById('send').onclick = async () => {
+      if (lastScrape.length === 0) { out.textContent = 'Run step 1 first.'; return }
+      const base = document.getElementById('api').value.trim().replace(/\/$/, '')
+      const jobId = document.getElementById('jobid').value.trim()
+      const payload = { source: 'indeed', candidates: lastScrape }
+      if (jobId) payload.job_id = jobId
+      out.textContent = 'POSTing to ' + base + '/api/ingest …'
+      try {
+        const res = await fetch(base + '/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const body = await res.json()
+        out.innerHTML = '<span class="' + (res.ok ? 'ok' : 'err') + '">HTTP ' + res.status
+          + '</span>\n' + JSON.stringify(body, null, 2)
+          + (jobId ? '\n\nNow open the dashboard → this job → candidates should appear and score within ~30s.'
+                   : '\n\n(No job_id given — candidates created unscored. Paste a job UUID to see scoring.)')
+      } catch (e) {
+        out.innerHTML = '<span class="err">Request failed: ' + e.message + '</span>'
+          + '\n\nIf this is a CORS/network error against production, the backend is reachable from a normal page, so check the URL.'
+      }
+    }
+  </script>
+</body>
+</html>
