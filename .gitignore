@@ -46,3 +46,6 @@ redis_data/
 
 # Scraped DOM dumps used for debugging (contain candidate PII)
 scraperes/
+
+# Generated test candidate resumes
+fake_candidates/
