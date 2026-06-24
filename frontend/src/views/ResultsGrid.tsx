@@ -6,6 +6,7 @@ import { api } from '../api/client'
 import type { Job, Candidate } from '../types'
 import CandidateCard from '../components/CandidateCard'
 import CandidateDetail from './CandidateDetail'
+import { useCandidateCount } from '../hooks/useCandidateCount'
 
 type Filter = 'keep' | 'pin' | 'skip' | 'all'
 
@@ -27,6 +28,8 @@ export default function ResultsGrid() {
       api.jobs.candidates(jobId!, { decision: filter === 'all' ? undefined : filter }),
     enabled: !!jobId,
   })
+
+  const { data: counts } = useCandidateCount(jobId)
 
   const selectedJob = jobs.find((j) => j.id === jobId)
 
@@ -76,6 +79,16 @@ export default function ResultsGrid() {
           <ChevronLeft size={16} /> Jobs
         </button>
         <h1 className="text-2xl font-bold flex-1">{selectedJob?.title}</h1>
+        {counts && (
+          <span className="text-sm text-slate-500">
+            {counts.scored} total
+            {counts.ingesting > 0 && (
+              <span className="ml-2 text-slate-400 inline-flex items-center gap-1">
+                <Loader2 size={11} className="animate-spin" /> {counts.ingesting} ingesting
+              </span>
+            )}
+          </span>
+        )}
       </div>
 
       {/* Filter tabs */}
