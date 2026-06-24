@@ -4,6 +4,7 @@ import { Loader2, Zap, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
 import type { ParseResult } from '../types'
+import { formatFlag } from '../utils/format'
 import ScoreChip from '../components/ScoreChip'
 
 export default function PasteAndParse() {
@@ -186,7 +187,7 @@ export default function PasteAndParse() {
               <div className="flex flex-col gap-1">
                 {result.flags.map((f, i) => (
                   <div key={i} className="text-sm text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                    ⚠ {f}
+                    ⚠ {formatFlag(f)}
                   </div>
                 ))}
               </div>

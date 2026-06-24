@@ -1,6 +1,7 @@
 import { MapPin, Clock, Briefcase, AlertTriangle, Navigation, Mail, Phone } from 'lucide-react'
 import type { Candidate } from '../types'
 import ScoreChip from './ScoreChip'
+import { formatFlag } from '../utils/format'
 
 interface CandidateCardProps {
   candidate: Candidate
@@ -136,7 +137,7 @@ export default function CandidateCard({
             {flags.map((f, i) => (
               <div key={i} className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
                 <AlertTriangle size={11} className="shrink-0" />
-                {f}
+                {formatFlag(f)}
               </div>
             ))}
           </div>
@@ -176,7 +177,7 @@ export default function CandidateCard({
       {flags.length > 0 && (
         <div className="flex items-center gap-1 mt-2 text-xs text-amber-600">
           <AlertTriangle size={11} />
-          {flags[0]}
+          {formatFlag(flags[0])}
           {flags.length > 1 && ` +${flags.length - 1}`}
         </div>
       )}
