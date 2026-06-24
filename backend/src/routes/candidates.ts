@@ -38,13 +38,15 @@ export async function candidateRoutes(fastify: FastifyInstance) {
   fastify.post('/api/parse', async (req, reply) => {
     const body = ParseAndScoreSchema.parse(req.body)
 
-    // Parse candidate structure
-    const parsed = await parseCandidate(body.rawText)
+    // parse, match, and summary are independent — run them concurrently so the
+    // request waits on the slowest single call rather than the sum of all three.
+    const [parsed, matchScore, aiSummary] = await Promise.all([
+      parseCandidate(body.rawText),
+      computeMatchScore(body.jobDescription, body.rawText),
+      generateSummary(body.rawText, body.jobTitle),
+    ])
 
-    // Compute match score
-    const matchScore = await computeMatchScore(body.jobDescription, body.rawText)
-
-    // Willingness score
+    // Willingness needs the parsed job history, so it runs after the parse resolves.
     const firstJob = parsed.jobs[0]
     const willingnessResult = await scoreWillingness({
       jobTitle: body.jobTitle,
@@ -54,9 +56,6 @@ export async function candidateRoutes(fastify: FastifyInstance) {
       employer: firstJob?.employer,
       jobsJson: parsed.jobs,
     })
-
-    // Summary
-    const aiSummary = await generateSummary(body.rawText, body.jobTitle)
 
     // Optionally persist
     let candidateId: string | undefined

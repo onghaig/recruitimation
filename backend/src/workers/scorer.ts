@@ -42,12 +42,20 @@ const worker = new Worker<ScoreJobData>(
       return
     }
 
-    // Step 1 — compute match score via embeddings
-    const matchScore = await computeMatchScore(jobRecord.description, candidate.rawText)
+    // Steps 1, 2, 4 are independent (match score, structured parse, summary), so
+    // run them concurrently. Only willingness (below) depends on the parse output.
+    // Extension-ingested candidates carry a thin scrape (name/title/snippet) with
+    // null jobsJson, which starves the willingness model — parse those here,
+    // mirroring /api/parse. Candidates that already have structured jobs skip it.
+    const needsParse =
+      !Array.isArray(candidate.jobsJson) || candidate.jobsJson.length === 0
 
-    // Step 2 — ensure structured job history. Extension-ingested candidates
-    // only carry a thin scrape (name/title/snippet) with null jobsJson, which
-    // starves the willingness model. Parse them here, mirroring /api/parse.
+    const [matchScore, parsed, aiSummary] = await Promise.all([
+      computeMatchScore(jobRecord.description, candidate.rawText),
+      needsParse ? parseCandidate(candidate.rawText) : Promise.resolve(null),
+      generateSummary(candidate.rawText, jobRecord.title),
+    ])
+
     let jobsArray = Array.isArray(candidate.jobsJson) ? candidate.jobsJson : []
     let skillsArray = Array.isArray(candidate.skillsJson) ? candidate.skillsJson : []
     const parsedFields: {
@@ -57,8 +65,7 @@ const worker = new Worker<ScoreJobData>(
       location?: string | null
     } = {}
 
-    if (jobsArray.length === 0) {
-      const parsed = await parseCandidate(candidate.rawText)
+    if (parsed) {
       jobsArray = parsed.jobs ?? []
       skillsArray = parsed.skills ?? []
       // Backfill contact fields only where the scrape left them empty.
@@ -86,10 +93,7 @@ const worker = new Worker<ScoreJobData>(
       resumeLastActive: candidate.resumeLastActive?.toISOString().split('T')[0] ?? null,
     })
 
-    // Step 4 — one-line summary via Claude
-    const aiSummary = await generateSummary(candidate.rawText, jobRecord.title)
-
-    // Step 5 — write back to DB
+    // Step 4 — write back to DB (summary already computed concurrently above)
     await prisma.candidate.update({
       where: { id: candidateId },
       data: {

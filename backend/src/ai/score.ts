@@ -103,7 +103,8 @@ Candidate profile:
 ${rawText.slice(0, 3000)}`
 
   const message = await openai.chat.completions.create({
-    model: 'meta/llama-3.3-70b-instruct',
+    // 8b is plenty for a one-line summary and ~5x faster than the 70b model.
+    model: 'meta/llama-3.1-8b-instruct',
     max_tokens: 100,
     messages: [{ role: 'user', content: prompt }],
   })
@@ -137,7 +138,9 @@ Profile text:
 ${rawText.slice(0, 8000)}`
 
   const message = await openai.chat.completions.create({
-    model: 'meta/llama-3.3-70b-instruct',
+    // Field extraction is structured but not reasoning-heavy; 8b handles it well
+    // and is ~5x faster than the 70b model.
+    model: 'meta/llama-3.1-8b-instruct',
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   })
