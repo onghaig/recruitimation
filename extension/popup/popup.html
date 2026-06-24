@@ -84,6 +84,23 @@
     .dot.green  { background: #22c55e; }
     .dot.red    { background: #ef4444; }
     .dot.grey   { background: #94a3b8; }
+    .divider { height: 1px; background: #e2e8f0; margin: 16px 0; }
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #334155;
+      margin-top: 8px;
+    }
+    .btn-secondary:hover { background: #cbd5e1; }
+    .progress-track {
+      height: 6px;
+      width: 100%;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-bar { height: 100%; background: #0284c7; width: 0%; transition: width .3s; }
+    .hint { font-size: 11px; color: #94a3b8; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -113,6 +130,16 @@
         <span class="dot grey"></span>Checking…
       </span>
     </div>
+
+    <!-- Auto-ingest all candidates -->
+    <div class="divider"></div>
+    <button id="auto-btn">Auto-ingest all candidates</button>
+    <button id="auto-cancel" class="btn-secondary" style="display:none">Cancel</button>
+    <div class="progress-track" id="auto-track" style="display:none">
+      <div class="progress-bar" id="auto-bar"></div>
+    </div>
+    <div class="hint" id="auto-hint">Open an Indeed candidates list, then run this.</div>
+    <div class="divider"></div>
 
     <!-- API URL setting -->
     <div class="input-row">
