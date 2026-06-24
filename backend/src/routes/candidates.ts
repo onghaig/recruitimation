@@ -244,4 +244,19 @@ export async function candidateRoutes(fastify: FastifyInstance) {
 
     return reply.status(201).send(decision)
   })
+
+  // DELETE /api/candidates/:id/decision — undo: remove the latest decision for
+  // this candidate (optionally scoped to a job), so it returns to "undecided".
+  fastify.delete<{ Params: { id: string }; Querystring: { jobId?: string } }>(
+    '/api/candidates/:id/decision',
+    async (req) => {
+      const { id } = req.params
+      const latest = await prisma.decision.findFirst({
+        where: { candidateId: id, ...(req.query.jobId ? { jobId: req.query.jobId } : {}) },
+        orderBy: { decidedAt: 'desc' },
+      })
+      if (latest) await prisma.decision.delete({ where: { id: latest.id } })
+      return { ok: true, removed: !!latest }
+    },
+  )
 }

@@ -142,6 +142,12 @@ export const api = {
       decisions = [...decisions, d]
       return d
     },
+    undecide: async (candidateId: string, jobId: string): Promise<{ ok: boolean; removed: boolean }> => {
+      await delay(150)
+      const before = decisions.length
+      decisions = decisions.filter((d) => !(d.candidateId === candidateId && d.jobId === jobId))
+      return { ok: true, removed: decisions.length < before }
+    },
     parse: async (_data: unknown): Promise<ParseResult> => {
       await delay(1200)
       return MOCK_PARSE_RESULT

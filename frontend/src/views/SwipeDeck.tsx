@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
-import { ThumbsUp, Bookmark, X, ChevronLeft, Loader2, CheckSquare } from 'lucide-react'
+import { ThumbsUp, Bookmark, X, ChevronLeft, Loader2, CheckSquare, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
 import type { Job, Candidate } from '../types'
@@ -32,30 +32,42 @@ function JobPicker({ jobs, onSelect }: { jobs: Job[]; onSelect: (id: string) => 
 
 interface CardDragProps {
   candidate: Candidate
-  onKeep: () => void
-  onPin: () => void
-  onSkip: () => void
+  onDecide: (decision: 'keep' | 'skip') => void
 }
 
-function DraggableCard({ candidate, onKeep, onPin, onSkip }: CardDragProps) {
+function DraggableCard({ candidate, onDecide }: CardDragProps) {
   const x = useMotionValue(0)
-  const rotate = useTransform(x, [-200, 200], [-15, 15])
-  const keepOpacity = useTransform(x, [30, 100], [0, 1])
-  const skipOpacity = useTransform(x, [-100, -30], [1, 0])
+  const rotate = useTransform(x, [-200, 200], [-12, 12])
+  const keepOpacity = useTransform(x, [40, 120], [0, 1])
+  const skipOpacity = useTransform(x, [-120, -40], [1, 0])
+  const [exitX, setExitX] = useState(0)
+  // Lock so a single card can only be decided once (prevents double-swipe).
+  const decided = useRef(false)
 
-  const handleDragEnd = (_: unknown, info: { offset: { x: number } }) => {
-    if (info.offset.x > 100) onKeep()
-    else if (info.offset.x < -100) onSkip()
-    else x.set(0)
+  const fling = (decision: 'keep' | 'skip') => {
+    if (decided.current) return
+    decided.current = true
+    setExitX(decision === 'keep' ? 700 : -700)
+    onDecide(decision)
+  }
+
+  const handleDragEnd = (_: unknown, info: { offset: { x: number }; velocity: { x: number } }) => {
+    if (decided.current) return
+    if (info.offset.x > 90 || info.velocity.x > 700) fling('keep')
+    else if (info.offset.x < -90 || info.velocity.x < -700) fling('skip')
+    // otherwise dragConstraints springs it back to center automatically
   }
 
   return (
     <motion.div
       style={{ x, rotate }}
-      drag="x"
+      drag={decided.current ? false : 'x'}
       dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.9}
+      dragElastic={0.6}
       onDragEnd={handleDragEnd}
+      initial={{ scale: 0.96, y: 10, opacity: 0.5 }}
+      animate={{ scale: 1, y: 0, opacity: 1, transition: { type: 'spring', stiffness: 520, damping: 38 } }}
+      exit={{ x: exitX, opacity: 0, scale: 0.92, transition: { duration: 0.18 } }}
       className="relative z-10 cursor-grab active:cursor-grabbing"
     >
       {/* Keep indicator */}
@@ -104,6 +116,9 @@ export default function SwipeDeck() {
 
   const { data: counts } = useCandidateCount(jobId)
 
+  // Fire-and-forget so the UI never waits on the network. We advance the deck
+  // optimistically; counts refresh on settle (the deck list itself stays stable
+  // for the whole session so undo can step back through it).
   const decideMutation = useMutation({
     mutationFn: ({
       candidateId,
@@ -113,23 +128,39 @@ export default function SwipeDeck() {
       candidateId: string
       decision: 'keep' | 'pin' | 'skip'
       pinNote?: string
-    }) =>
-      api.candidates.decide(candidateId, {
-        decision,
-        jobId: jobId!,
-        pinNote,
-      }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['candidates'] })
-      const label = vars.decision === 'keep' ? '✅ Kept' : vars.decision === 'pin' ? '📌 Pinned' : '⏭ Skipped'
-      toast.success(label, { duration: 1200 })
-      setIndex((i) => i + 1)
-      setShowPdf(false)
-      setPinModal(null)
-    },
+    }) => api.candidates.decide(candidateId, { decision, jobId: jobId!, pinNote }),
+    onError: () => toast.error('Failed to save — use undo and retry'),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['candidateCount', jobId] }),
+  })
+
+  const undoMutation = useMutation({
+    mutationFn: (candidateId: string) => api.candidates.undecide(candidateId, jobId!),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['candidateCount', jobId] }),
   })
 
   const current = candidates[index]
+
+  // Decide on the current card and advance immediately (optimistic).
+  const decide = (decision: 'keep' | 'pin' | 'skip', pinNote?: string) => {
+    if (!current) return
+    decideMutation.mutate({ candidateId: current.id, decision, pinNote })
+    const label = decision === 'keep' ? '✅ Kept' : decision === 'pin' ? '📌 Pinned' : '⏭ Skipped'
+    toast.success(label, { duration: 1000 })
+    setIndex((i) => i + 1)
+    setShowPdf(false)
+    setPinModal(null)
+    setPinNote('')
+  }
+
+  // Step back to the previous candidate and clear its decision server-side.
+  const undo = () => {
+    if (index === 0) return
+    const prev = candidates[index - 1]
+    setIndex((i) => i - 1)
+    setShowPdf(false)
+    if (prev) undoMutation.mutate(prev.id)
+    toast('Undone', { icon: '↩️', duration: 1000 })
+  }
 
   if (!jobId) {
     return <JobPicker jobs={jobs} onSelect={(id) => { setJobId(id); navigate(`/swipe/${id}`) }} />
@@ -178,7 +209,14 @@ export default function SwipeDeck() {
             </p>
           )}
         </div>
-        <div className="w-24" />
+        <button
+          className="btn-secondary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          onClick={undo}
+          disabled={index === 0}
+          title="Undo last decision"
+        >
+          <RotateCcw size={14} /> Undo
+        </button>
       </div>
 
       {/* Progress bar */}
@@ -197,14 +235,8 @@ export default function SwipeDeck() {
             <CandidateCard candidate={candidates[index + 1]} variant="swipe" />
           </div>
         )}
-        <AnimatePresence mode="wait">
-          <DraggableCard
-            key={current.id}
-            candidate={current}
-            onKeep={() => decideMutation.mutate({ candidateId: current.id, decision: 'keep' })}
-            onPin={() => setPinModal({ candidate: current })}
-            onSkip={() => decideMutation.mutate({ candidateId: current.id, decision: 'skip' })}
-          />
+        <AnimatePresence initial={false}>
+          <DraggableCard key={current.id} candidate={current} onDecide={(d) => decide(d)} />
         </AnimatePresence>
       </div>
 
@@ -225,8 +257,7 @@ export default function SwipeDeck() {
       <div className="flex gap-4">
         <button
           className="flex flex-col items-center gap-1 p-4 rounded-2xl bg-red-100 hover:bg-red-200 text-red-600 transition-colors"
-          onClick={() => decideMutation.mutate({ candidateId: current.id, decision: 'skip' })}
-          disabled={decideMutation.isPending}
+          onClick={() => decide('skip')}
         >
           <X size={22} />
           <span className="text-xs font-medium">Skip</span>
@@ -234,15 +265,13 @@ export default function SwipeDeck() {
         <button
           className="flex flex-col items-center gap-1 p-4 rounded-2xl bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors"
           onClick={() => setPinModal({ candidate: current })}
-          disabled={decideMutation.isPending}
         >
           <Bookmark size={22} />
           <span className="text-xs font-medium">Pin</span>
         </button>
         <button
           className="flex flex-col items-center gap-1 p-4 rounded-2xl bg-emerald-100 hover:bg-emerald-200 text-emerald-600 transition-colors"
-          onClick={() => decideMutation.mutate({ candidateId: current.id, decision: 'keep' })}
-          disabled={decideMutation.isPending}
+          onClick={() => decide('keep')}
         >
           <ThumbsUp size={22} />
           <span className="text-xs font-medium">Keep</span>
@@ -270,16 +299,7 @@ export default function SwipeDeck() {
               <button className="btn-secondary" onClick={() => { setPinModal(null); setPinNote('') }}>
                 Cancel
               </button>
-              <button
-                className="btn-primary"
-                onClick={() =>
-                  decideMutation.mutate({
-                    candidateId: pinModal.candidate.id,
-                    decision: 'pin',
-                    pinNote: pinNote || undefined,
-                  })
-                }
-              >
+              <button className="btn-primary" onClick={() => decide('pin', pinNote || undefined)}>
                 <Bookmark size={14} />
                 Pin
               </button>

@@ -58,6 +58,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    undecide: (id: string, jobId: string) =>
+      request<{ ok: boolean; removed: boolean }>(
+        `/api/candidates/${id}/decision?jobId=${encodeURIComponent(jobId)}`,
+        { method: 'DELETE' },
+      ),
     parse: (data: {
       rawText: string
       jobDescription: string
