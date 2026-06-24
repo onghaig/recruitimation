@@ -140,18 +140,46 @@ ${rawText.slice(0, 3000)}`
   return (message.choices[0].message.content ?? '').trim()
 }
 
-/**
- * Parse raw candidate paste text into a structured object.
- */
-export async function parseCandidate(rawText: string): Promise<{
+export interface ParsedCandidate {
   name: string | null
   email: string | null
   phone: string | null
   location: string | null
   jobs: Array<{ role: string; employer: string; start?: string; end?: string; detail?: string }>
   skills: string[]
-}> {
+}
+
+/**
+ * Backfill contact fields from the raw résumé text whenever the model left them
+ * null. These four fields are reliably present near the top of a scraped Indeed
+ * résumé, so they should never depend on the larger structured-JSON parse
+ * succeeding (a long career can truncate that JSON and zero out everything).
+ */
+export function backfillContact(rawText: string, parsed: ParsedCandidate): ParsedCandidate {
+  const out = { ...parsed }
+  if (!out.email) {
+    out.email = (rawText.match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0] ?? null
+  }
+  if (!out.phone) {
+    out.phone = (rawText.match(/\+?\d{0,2}[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0]?.trim() ?? null
+  }
+  if (!out.name) {
+    // Indeed résumé header: "Full name\nBridgette Smith"
+    out.name = rawText.match(/\bFull name\b\s*[:\n]+\s*([^\n]{2,60})/i)?.[1]?.trim() ?? null
+  }
+  if (!out.location) {
+    // Indeed résumé header: "City, state\nTroy, NY"
+    out.location = rawText.match(/\bCity,?\s*state\b\s*[:\n]+\s*([^\n]{2,60})/i)?.[1]?.trim() ?? null
+  }
+  return out
+}
+
+/**
+ * Parse raw candidate paste text into a structured object.
+ */
+export async function parseCandidate(rawText: string): Promise<ParsedCandidate> {
   const prompt = `Extract structured data from this candidate profile text.
+Keep each job "detail" to one short phrase (max 15 words) so the response stays compact.
 Return JSON only — no prose:
 {
   "name": string | null,
@@ -167,14 +195,16 @@ ${rawText.slice(0, 8000)}`
 
   const message = await openai.chat.completions.create({
     // Field extraction is structured but not reasoning-heavy; 8b handles it well
-    // and is ~5x faster than the 70b model.
+    // and is ~5x faster than the 70b model. max_tokens is generous so a long
+    // job history doesn't truncate the JSON (which would fail the parse and zero
+    // out every field, contact info included).
     model: 'meta/llama-3.1-8b-instruct',
-    max_tokens: 1024,
+    max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
   })
 
   const text = message.choices[0].message.content ?? ''
-  return parseJsonLoose(text, {
+  const parsed = parseJsonLoose<ParsedCandidate>(text, {
     name: null,
     email: null,
     phone: null,
@@ -182,4 +212,6 @@ ${rawText.slice(0, 8000)}`
     jobs: [],
     skills: [],
   })
+  // Guarantee contact fields even if the structured parse fell back to nulls.
+  return backfillContact(rawText, parsed)
 }

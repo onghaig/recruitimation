@@ -22,7 +22,15 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://employers.indeed.com/*/applicants/*"],
+      "matches": ["https://employers.indeed.com/candidates*"],
+      "js": ["content/indeed_candidates.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://employers.indeed.com/*/applicants/*",
+        "https://employers.indeed.com/candidates*"
+      ],
       "js": ["content/indeed_profile.js"],
       "run_at": "document_idle"
     },

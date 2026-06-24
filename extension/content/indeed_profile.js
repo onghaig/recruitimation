@@ -18,6 +18,12 @@
   const seen = new Set() // applicantIds handled this session (avoid re-spamming)
 
   function getIds() {
+    // New candidates view: /candidates/view?id=:candidateId&...&legacyJobId=...
+    if (location.pathname.startsWith('/candidates/view')) {
+      const id = new URLSearchParams(location.search).get('id')
+      return id ? { applicantId: id } : null
+    }
+    // Legacy applicant profile: /jobs/:jobId/applicants/:applicantId
     const m = location.pathname.match(/\/jobs?\/([^/]+)\/applicants\/([^/?#]+)/)
     if (m) return { applicantId: m[2] }
     const m2 = location.pathname.match(/\/applicants\/([^/?#]+)/)
