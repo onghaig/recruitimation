@@ -43,3 +43,6 @@ Thumbs.db
 # Docker
 postgres_data/
 redis_data/
+
+# Scraped DOM dumps used for debugging (contain candidate PII)
+scraperes/

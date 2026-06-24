@@ -63,6 +63,16 @@ export const api = {
       jobId?: string
     }) =>
       request<ParseResult>('/api/parse', { method: 'POST', body: JSON.stringify(data) }),
+    ingest: (data: {
+      source: 'indeed' | 'linkedin' | 'paste'
+      job_id?: string
+      platform_job_id?: string
+      candidates: Array<{ source_id?: string; name?: string; raw_text?: string; location?: string }>
+    }) =>
+      request<{ ingested: number; results: Array<{ id: string; status: string }> }>('/api/ingest', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 
   outreach: {
