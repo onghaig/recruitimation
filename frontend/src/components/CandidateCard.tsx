@@ -1,6 +1,9 @@
-import { MapPin, Clock, Briefcase, AlertTriangle, Navigation, Mail, Phone } from 'lucide-react'
+import { useState } from 'react'
+import { MapPin, Clock, Briefcase, AlertTriangle, Navigation, Mail, Phone, ExternalLink, FileText } from 'lucide-react'
 import type { Candidate } from '../types'
 import ScoreChip from './ScoreChip'
+import CandidateContextModal from './CandidateContextModal'
+import { getProfileUrl } from '../utils/candidate'
 
 interface CandidateCardProps {
   candidate: Candidate
@@ -19,11 +22,47 @@ export default function CandidateCard({
   const skills = Array.isArray(c.skillsJson) ? (c.skillsJson as string[]) : []
   const firstJob = jobs[0] as { role?: string; employer?: string; start?: string; end?: string } | undefined
 
+  const [showContext, setShowContext] = useState(false)
+  const profileUrl = getProfileUrl(c)
+  const displayName = c.name ?? 'Unknown'
+  // Name links out to the scraped profile when available, otherwise opens the
+  // source-context modal. stopPropagation so it doesn't trigger the grid card's
+  // own click-through to the detail view.
+  const nameNode = profileUrl ? (
+    <a
+      href={profileUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="hover:underline inline-flex items-center gap-1"
+      title="Open source profile"
+    >
+      {displayName} <ExternalLink size={13} className="opacity-50" />
+    </a>
+  ) : (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        setShowContext(true)
+      }}
+      className="hover:underline decoration-dotted underline-offset-2 inline-flex items-center gap-1 text-left"
+      title="View source context"
+    >
+      {displayName} <FileText size={12} className="opacity-50" />
+    </button>
+  )
+  const contextModal = showContext ? (
+    <CandidateContextModal candidate={c} onClose={() => setShowContext(false)} />
+  ) : null
+
   if (variant === 'swipe') {
     const visibleJobs = jobs.slice(0, 3)
     const extraJobs = jobs.length - visibleJobs.length
 
     return (
+      <>
+      {contextModal}
       <div
         className="card p-8 w-full max-w-lg select-none"
         style={{ touchAction: 'none' }}
@@ -31,7 +70,7 @@ export default function CandidateCard({
         {/* Header — name + scores */}
         <div className="flex items-start justify-between mb-2">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">{c.name ?? 'Unknown'}</h2>
+            <h2 className="text-2xl font-bold text-slate-900">{nameNode}</h2>
 
             {/* Location + distance */}
             <div className="flex items-center flex-wrap gap-3 mt-1">
@@ -142,18 +181,21 @@ export default function CandidateCard({
           </div>
         )}
       </div>
+      </>
     )
   }
 
   // Grid variant
   return (
+    <>
+    {contextModal}
     <div
       className="card p-4 cursor-pointer hover:shadow-md transition-shadow"
       onClick={onClick}
     >
       <div className="flex items-start justify-between mb-2">
         <div>
-          <h3 className="font-semibold text-slate-900">{c.name ?? 'Unknown'}</h3>
+          <h3 className="font-semibold text-slate-900">{nameNode}</h3>
           {c.location && (
             <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
               <MapPin size={10} /> {c.location}
@@ -181,5 +223,6 @@ export default function CandidateCard({
         </div>
       )}
     </div>
+    </>
   )
 }

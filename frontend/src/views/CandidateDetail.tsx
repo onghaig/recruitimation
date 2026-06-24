@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { ChevronLeft, Mail, Phone, MapPin, Send, Loader2 } from 'lucide-react'
+import { ChevronLeft, Mail, Phone, MapPin, Send, Loader2, ExternalLink, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
 import type { Candidate } from '../types'
 import ScoreChip from '../components/ScoreChip'
 import PdfViewer from '../components/PdfViewer'
+import CandidateContextModal from '../components/CandidateContextModal'
+import { getProfileUrl } from '../utils/candidate'
 
 interface Props {
   candidate: Candidate
@@ -17,6 +19,8 @@ export default function CandidateDetail({ candidate: c, jobId, onBack }: Props) 
   const qc = useQueryClient()
   const [outreachDraft, setOutreachDraft] = useState<{ id: string; draft: string } | null>(null)
   const [editedDraft, setEditedDraft] = useState('')
+  const [showContext, setShowContext] = useState(false)
+  const profileUrl = getProfileUrl(c)
 
   const { data: outreachHistory = [] } = useQuery({
     queryKey: ['outreach', c.id],
@@ -65,7 +69,28 @@ export default function CandidateDetail({ candidate: c, jobId, onBack }: Props) 
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">{c.name ?? 'Unknown'}</h1>
+            <h1 className="text-2xl font-bold">
+              {profileUrl ? (
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline inline-flex items-center gap-1.5"
+                  title="Open source profile"
+                >
+                  {c.name ?? 'Unknown'} <ExternalLink size={16} className="opacity-50" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowContext(true)}
+                  className="hover:underline decoration-dotted underline-offset-4 inline-flex items-center gap-1.5"
+                  title="View source context"
+                >
+                  {c.name ?? 'Unknown'} <FileText size={14} className="opacity-50" />
+                </button>
+              )}
+            </h1>
             <div className="flex flex-wrap gap-3 mt-1 text-sm text-slate-500">
               {c.location && <span className="flex items-center gap-1"><MapPin size={13} />{c.location}</span>}
               {c.email && <span className="flex items-center gap-1"><Mail size={13} />{c.email}</span>}
@@ -207,6 +232,10 @@ export default function CandidateDetail({ candidate: c, jobId, onBack }: Props) 
           </div>
         )}
       </div>
+
+      {showContext && (
+        <CandidateContextModal candidate={c} onClose={() => setShowContext(false)} />
+      )}
     </div>
   )
 }
