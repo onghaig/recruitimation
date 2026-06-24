@@ -8,10 +8,12 @@ const openai = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
 })
 
-// nv-embedqa-e5-v5 requires input_type, which is not part of the standard
-// OpenAI SDK EmbeddingCreateParams — use an intersection type to pass it through.
+// nv-embedqa-e5-v5 requires input_type and supports truncate, neither of which
+// is part of the standard OpenAI SDK EmbeddingCreateParams — use an intersection
+// type to pass them through.
 type NvidiaEmbeddingParams = Parameters<typeof openai.embeddings.create>[0] & {
   input_type: 'query' | 'passage'
+  truncate: 'NONE' | 'START' | 'END'
 }
 
 /**
@@ -26,8 +28,12 @@ export async function embed(
 ): Promise<number[]> {
   const response = await openai.embeddings.create({
     model: 'nvidia/nv-embedqa-e5-v5',
-    input: text.slice(0, 8000), // stay within token limit
+    // The model caps input at 512 tokens. truncate:'END' tells the server to
+    // trim to that limit instead of returning a 400 — without it, any resume or
+    // job description longer than ~512 tokens fails the whole scoring request.
+    input: text.slice(0, 8000),
     input_type,
+    truncate: 'END',
   } as NvidiaEmbeddingParams)
   return response.data[0].embedding
 }
