@@ -71,9 +71,10 @@ export async function jobRoutes(fastify: FastifyInstance) {
       const { id } = req.params
       const limit = parseInt(req.query.limit ?? '50', 10)
 
-      // Get candidates with their latest decision
+      // Get candidates with their latest decision. Only fully-scored candidates
+      // are shown — ones still being ingested by the LLM are hidden until ready.
       const candidates = await prisma.candidate.findMany({
-        where: { jobId: id },
+        where: { jobId: id, scoredAt: { not: null } },
         orderBy: [{ matchScore: 'desc' }, { willingScore: 'desc' }],
         take: limit,
         include: {
@@ -96,4 +97,24 @@ export async function jobRoutes(fastify: FastifyInstance) {
       return candidates
     }
   )
+
+  // GET /api/jobs/:id/candidates/count — counts for a job. Drives the ingest
+  // progress UI and the review/results/jobs tab badges without depending on the
+  // list endpoint's (capped) page size.
+  //   total     — all candidates ingested for the job
+  //   scored    — fully scored by the LLM (ready to review)
+  //   ingesting — uploaded but not yet scored (total - scored)
+  //   reviewed  — scored AND have a keep/pin/skip decision
+  //   toReview  — scored but not yet decided (scored - reviewed)
+  fastify.get<{ Params: { id: string } }>('/api/jobs/:id/candidates/count', async (req) => {
+    const { id } = req.params
+    const [total, scored, reviewed] = await Promise.all([
+      prisma.candidate.count({ where: { jobId: id } }),
+      prisma.candidate.count({ where: { jobId: id, scoredAt: { not: null } } }),
+      prisma.candidate.count({
+        where: { jobId: id, scoredAt: { not: null }, decisions: { some: {} } },
+      }),
+    ])
+    return { total, scored, ingesting: total - scored, reviewed, toReview: scored - reviewed }
+  })
 }
