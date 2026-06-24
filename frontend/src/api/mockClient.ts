@@ -132,6 +132,15 @@ export const api = {
       await delay(1200)
       return MOCK_PARSE_RESULT
     },
+    ingest: async (data: {
+      candidates: Array<unknown>
+    }): Promise<{ ingested: number; results: Array<{ id: string; status: string }> }> => {
+      await delay(800)
+      return {
+        ingested: data.candidates.length,
+        results: data.candidates.map((_, i) => ({ id: `mock-${Date.now()}-${i}`, status: 'created' })),
+      }
+    },
   },
 
   outreach: {
