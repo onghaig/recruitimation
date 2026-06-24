@@ -47,6 +47,85 @@ $('save-btn').addEventListener('click', () => {
 })
 
 // ── API health check ───────────────────────────────────────��───────────────
+// ── Auto-ingest all candidates ───────────────────────────────────────────────
+const autoBtn = $('auto-btn')
+const autoCancel = $('auto-cancel')
+const autoTrack = $('auto-track')
+const autoBar = $('auto-bar')
+const autoHint = $('auto-hint')
+let progressTimer = null
+
+function setAutoRunning(running) {
+  autoBtn.style.display = running ? 'none' : 'block'
+  autoCancel.style.display = running ? 'block' : 'none'
+  autoTrack.style.display = running ? 'block' : 'none'
+}
+
+function renderProgress(done, total) {
+  const pct = total ? Math.round((done / total) * 100) : 0
+  autoBar.style.width = `${pct}%`
+  autoHint.textContent = `${done} / ${total} profiles processed`
+}
+
+function pollProgress() {
+  clearInterval(progressTimer)
+  progressTimer = setInterval(() => {
+    chrome.runtime.sendMessage({ type: 'GET_AUTO_PROGRESS' }, (res) => {
+      if (chrome.runtime.lastError || !res?.ok) return
+      renderProgress(res.done, res.total)
+      if (!res.running) {
+        clearInterval(progressTimer)
+        setAutoRunning(false)
+        autoHint.textContent = `Done — ${res.done} / ${res.total} profiles processed`
+      }
+    })
+  }, 1500)
+}
+
+autoBtn.addEventListener('click', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0]
+    if (!tab?.id) return
+    // Ask the candidates-list content script for the profile queue.
+    chrome.tabs.sendMessage(tab.id, { type: 'GET_PROFILE_QUEUE' }, (res) => {
+      if (chrome.runtime.lastError || !res?.ok) {
+        autoHint.textContent = 'Open an Indeed candidates list first.'
+        return
+      }
+      const items = res.items || []
+      if (items.length === 0) {
+        autoHint.textContent = 'No candidates found on this page.'
+        return
+      }
+      chrome.runtime.sendMessage({ type: 'START_AUTO_INGEST', items }, (startRes) => {
+        if (chrome.runtime.lastError || !startRes?.ok) {
+          autoHint.textContent = startRes?.error ?? 'Could not start.'
+          return
+        }
+        setAutoRunning(true)
+        renderProgress(0, startRes.total)
+        pollProgress()
+      })
+    })
+  })
+})
+
+autoCancel.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'CANCEL_AUTO_INGEST' }, () => {
+    void chrome.runtime.lastError
+  })
+})
+
+// If an auto-ingest is already running when the popup opens, resume the view.
+chrome.runtime.sendMessage({ type: 'GET_AUTO_PROGRESS' }, (res) => {
+  if (chrome.runtime.lastError || !res?.ok) return
+  if (res.running) {
+    setAutoRunning(true)
+    renderProgress(res.done, res.total)
+    pollProgress()
+  }
+})
+
 async function checkApiStatus(url) {
   const el = $('stat-status')
   try {
