@@ -60,32 +60,47 @@ export async function candidateRoutes(fastify: FastifyInstance) {
     })
     const matchScore = score.match_score
 
-    // Optionally persist
-    let candidateId: string | undefined
-    if (body.jobId) {
-      const candidate = await prisma.candidate.create({
+    // Resolve the job: use the selected one, or auto-create it from the entered
+    // details so a freshly-parsed candidate (and its new job) always show up in
+    // the Jobs/Results tabs.
+    let jobId = body.jobId
+    let jobCreated = false
+    if (!jobId) {
+      const job = await prisma.job.create({
         data: {
-          jobId: body.jobId,
-          source: 'paste',
-          name: parsed.name,
-          email: parsed.email,
-          phone: parsed.phone,
-          location: parsed.location,
-          rawText: body.rawText,
-          jobsJson: parsed.jobs,
-          skillsJson: parsed.skills,
-          matchScore,
-          willingScore: score.willing_score,
-          aiSummary,
-          flagsJson: score.flags,
-          scoredAt: new Date(),
+          title: body.jobTitle,
+          description: body.jobDescription,
+          location: body.jobLocation,
+          payRange: body.jobPayRange,
         },
       })
-      candidateId = candidate.id
+      jobId = job.id
+      jobCreated = true
     }
 
+    const candidate = await prisma.candidate.create({
+      data: {
+        jobId,
+        source: 'paste',
+        name: parsed.name,
+        email: parsed.email,
+        phone: parsed.phone,
+        location: parsed.location,
+        rawText: body.rawText,
+        jobsJson: parsed.jobs,
+        skillsJson: parsed.skills,
+        matchScore,
+        willingScore: score.willing_score,
+        aiSummary,
+        flagsJson: score.flags,
+        scoredAt: new Date(),
+      },
+    })
+
     return {
-      candidateId,
+      candidateId: candidate.id,
+      jobId,
+      jobCreated,
       parsed,
       matchScore,
       willingScore: score.willing_score,
