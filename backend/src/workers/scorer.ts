@@ -7,8 +7,7 @@
 import { Worker, Queue } from 'bullmq'
 import { Redis as IORedis } from 'ioredis'
 import { prisma } from '../db/client.js'
-import { computeMatchScore } from '../ai/embed.js'
-import { scoreWillingness, generateSummary, parseCandidate } from '../ai/score.js'
+import { scoreCandidate, generateSummary, parseCandidate } from '../ai/score.js'
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379'
 const connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null })
@@ -42,16 +41,15 @@ const worker = new Worker<ScoreJobData>(
       return
     }
 
-    // Steps 1, 2, 4 are independent (match score, structured parse, summary), so
-    // run them concurrently. Only willingness (below) depends on the parse output.
-    // Extension-ingested candidates carry a thin scrape (name/title/snippet) with
-    // null jobsJson, which starves the willingness model — parse those here,
-    // mirroring /api/parse. Candidates that already have structured jobs skip it.
+    // Parse and summary are independent, so run them concurrently. Scoring (below)
+    // depends on the parse output and runs after. Extension-ingested candidates
+    // carry a thin scrape (name/title/snippet) with null jobsJson, which starves
+    // the scoring model — parse those here, mirroring /api/parse. Candidates that
+    // already have structured jobs skip it.
     const needsParse =
       !Array.isArray(candidate.jobsJson) || candidate.jobsJson.length === 0
 
-    const [matchScore, parsed, aiSummary] = await Promise.all([
-      computeMatchScore(jobRecord.description, candidate.rawText),
+    const [parsed, aiSummary] = await Promise.all([
       needsParse ? parseCandidate(candidate.rawText) : Promise.resolve(null),
       generateSummary(candidate.rawText, jobRecord.title),
     ])
@@ -75,12 +73,12 @@ const worker = new Worker<ScoreJobData>(
       if (!candidate.location && parsed.location) parsedFields.location = parsed.location
     }
 
-    // Step 3 — willingness score
+    // Step 3 — match + willingness score (single LLM call returns both)
     const firstJob = jobsArray[0] as
       | { role?: string; employer?: string; start?: string; end?: string }
       | undefined
 
-    const willingnessResult = await scoreWillingness({
+    const score = await scoreCandidate({
       jobTitle: jobRecord.title,
       jobDescription: jobRecord.description,
       jobPayRange: jobRecord.payRange,
@@ -93,6 +91,7 @@ const worker = new Worker<ScoreJobData>(
       jobsJson: jobsArray,
       distanceMi: candidate.distanceMi ? Number(candidate.distanceMi) : null,
       resumeLastActive: candidate.resumeLastActive?.toISOString().split('T')[0] ?? null,
+      rawText: candidate.rawText,
     })
 
     // Step 4 — write back to DB (summary already computed concurrently above)
@@ -102,16 +101,16 @@ const worker = new Worker<ScoreJobData>(
         ...parsedFields,
         jobsJson: jobsArray,
         skillsJson: skillsArray,
-        matchScore,
-        willingScore: willingnessResult.willing_score,
+        matchScore: score.match_score,
+        willingScore: score.willing_score,
         aiSummary,
-        flagsJson: willingnessResult.flags,
+        flagsJson: score.flags,
         scoredAt: new Date(),
       },
     })
 
     console.log(
-      `[scorer] Done — candidate ${candidateId}: match=${matchScore} willing=${willingnessResult.willing_score}`
+      `[scorer] Done — candidate ${candidateId}: match=${score.match_score} willing=${score.willing_score}`
     )
   },
   {

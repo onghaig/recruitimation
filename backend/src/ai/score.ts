@@ -8,8 +8,9 @@ const openai = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
 })
 
-export interface WillingnessResult {
-  willing_score: number
+export interface CandidateScore {
+  match_score: number // 0-100, how well the candidate meets the job's requirements
+  willing_score: number // 0-100, likelihood to respond / accept / stay
   flags: string[]
   reasoning: string
 }
@@ -56,9 +57,14 @@ export function parseJsonLoose<T>(raw: string, fallback: T): T {
 }
 
 /**
- * Ask Claude to estimate willingness score (0-100) and surface flags.
+ * Score a candidate against a job with a single LLM call, returning two
+ * independent 0-100 numbers: match_score (requirement / experience fit) and
+ * willing_score (likelihood to respond, accept, and stay). match_score replaces
+ * the old embedding cosine similarity, which clustered every candidate around
+ * 70-85 regardless of fit because résumés in the same field embed close together.
  */
-export async function scoreWillingness(input: ScoreInput): Promise<WillingnessResult> {
+export async function scoreCandidate(input: ScoreInput): Promise<CandidateScore> {
+  const resumeExcerpt = input.rawText ? input.rawText.slice(0, 4000) : ''
   const prompt = `You are screening a job candidate for a specific role. Be strict — this is
 first-pass filtering for a staffing agency, and the recruiter's time and contact credits are
 limited. When in doubt, score lower.
@@ -73,30 +79,30 @@ Location: ${input.candidateLocation ?? 'Unknown'}
 Most recent role: ${input.mostRecentRole ?? 'Unknown'} at ${input.employer ?? 'Unknown'}${input.duration ? `, ${input.duration}` : ''}
 Full job history: ${JSON.stringify(input.jobsJson ?? [])}
 Distance from job: ${input.distanceMi != null ? `${input.distanceMi} miles` : 'Unknown — estimate the commute from the two locations above'}
-Resume last active: ${input.resumeLastActive ?? 'Unknown'}
+Resume last active: ${input.resumeLastActive ?? 'Unknown'}${resumeExcerpt ? `\nRésumé text:\n${resumeExcerpt}` : ''}
 
-Assess on TWO axes. REQUIREMENT FIT is by far the most important:
+Produce TWO independent scores:
 
-1. REQUIREMENT FIT (dominant factor): Read the job's requirements carefully. Does the candidate's
-history clearly show the experience and skills the job requires? If the description marks anything
-as "required" and the candidate does not clearly have it, treat that as a major disqualifier.
-Heavily penalise candidates whose background is in an unrelated field, even when the work is
-similarly low-skill (e.g. housekeeping experience does NOT qualify someone for a mailroom or
-warehouse role). Do not give credit for vaguely "transferable" soft skills when specific experience
-is required. A candidate who lacks required experience must score below 30 no matter how willing
-they appear.
+1. match_score (0-100) — REQUIREMENT FIT. Read the job's requirements carefully. Does the
+candidate's history clearly show the experience and skills the job requires? If the description
+marks anything as "required" and the candidate does not clearly have it, that is a major
+disqualifier — score below 30. Heavily penalise candidates whose background is in an unrelated
+field, even when the work is similarly low-skill (e.g. housekeeping experience does NOT qualify
+someone for a mailroom or warehouse role). Do not give credit for vaguely "transferable" soft
+skills when specific experience is required. Reserve 80-100 for candidates who clearly meet every
+requirement, 50-79 for partial fits, 30-49 for weak fits, and below 30 for unrelated backgrounds.
 
-2. WILLINGNESS: likelihood to respond to outreach, accept if offered, and stay past 30 days.
-Penalise: overqualification, large upward pay gap, long commute for low-wage role, resume inactive
-> 3 months, very recent job start (they just started somewhere else). Reward: exact title match,
-local, recently active, similar pay history.
+2. willing_score (0-100) — WILLINGNESS to respond to outreach, accept if offered, and stay past 30
+days. Penalise: overqualification, large upward pay gap, long commute for low-wage role, resume
+inactive > 3 months, very recent job start. Reward: exact title match, local, recently active,
+similar pay history.
 
-Return a single willing_score 0–100 that reflects BOTH axes but is dominated by requirement fit.
-In flags, add "lacks required <X>" for each unmet required item and "irrelevant experience" when the
-background is in an unrelated field.
+Use the FULL 0-100 range for both scores and spread candidates out — do not cluster everyone in
+the 70s. In flags, add "lacks required <X>" for each unmet required item and "irrelevant
+experience" when the background is in an unrelated field.
 
 Return JSON only — no prose before or after:
-{ "willing_score": number, "flags": string[], "reasoning": string }`
+{ "match_score": number, "willing_score": number, "flags": string[], "reasoning": string }`
 
   const message = await openai.chat.completions.create({
     model: 'meta/llama-3.3-70b-instruct',
@@ -105,7 +111,8 @@ Return JSON only — no prose before or after:
   })
 
   const text = message.choices[0].message.content ?? ''
-  return parseJsonLoose<WillingnessResult>(text, {
+  return parseJsonLoose<CandidateScore>(text, {
+    match_score: 0,
     willing_score: 0,
     flags: ['scoring_unavailable'],
     reasoning: 'Model output could not be parsed.',

@@ -3,8 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db/client.js'
 import { scoreQueue } from '../workers/scorer.js'
 import { presignUrl, uploadPdf } from '../storage/r2.js'
-import { computeMatchScore } from '../ai/embed.js'
-import { scoreWillingness, generateSummary, parseCandidate } from '../ai/score.js'
+import { scoreCandidate, generateSummary, parseCandidate } from '../ai/score.js'
 
 const DecisionSchema = z.object({
   decision: z.enum(['keep', 'pin', 'skip']),
@@ -38,17 +37,17 @@ export async function candidateRoutes(fastify: FastifyInstance) {
   fastify.post('/api/parse', async (req, reply) => {
     const body = ParseAndScoreSchema.parse(req.body)
 
-    // parse, match, and summary are independent — run them concurrently so the
-    // request waits on the slowest single call rather than the sum of all three.
-    const [parsed, matchScore, aiSummary] = await Promise.all([
+    // parse and summary are independent — run them concurrently so the request
+    // waits on the slowest single call rather than the sum of both.
+    const [parsed, aiSummary] = await Promise.all([
       parseCandidate(body.rawText),
-      computeMatchScore(body.jobDescription, body.rawText),
       generateSummary(body.rawText, body.jobTitle),
     ])
 
-    // Willingness needs the parsed job history, so it runs after the parse resolves.
+    // Scoring needs the parsed job history, so it runs after the parse resolves.
+    // match_score and willing_score both come from this single LLM call now.
     const firstJob = parsed.jobs[0]
-    const willingnessResult = await scoreWillingness({
+    const score = await scoreCandidate({
       jobTitle: body.jobTitle,
       jobDescription: body.jobDescription,
       jobPayRange: body.jobPayRange,
@@ -57,7 +56,9 @@ export async function candidateRoutes(fastify: FastifyInstance) {
       mostRecentRole: firstJob?.role,
       employer: firstJob?.employer,
       jobsJson: parsed.jobs,
+      rawText: body.rawText,
     })
+    const matchScore = score.match_score
 
     // Optionally persist
     let candidateId: string | undefined
@@ -74,9 +75,9 @@ export async function candidateRoutes(fastify: FastifyInstance) {
           jobsJson: parsed.jobs,
           skillsJson: parsed.skills,
           matchScore,
-          willingScore: willingnessResult.willing_score,
+          willingScore: score.willing_score,
           aiSummary,
-          flagsJson: willingnessResult.flags,
+          flagsJson: score.flags,
           scoredAt: new Date(),
         },
       })
@@ -87,9 +88,9 @@ export async function candidateRoutes(fastify: FastifyInstance) {
       candidateId,
       parsed,
       matchScore,
-      willingScore: willingnessResult.willing_score,
-      flags: willingnessResult.flags,
-      reasoning: willingnessResult.reasoning,
+      willingScore: score.willing_score,
+      flags: score.flags,
+      reasoning: score.reasoning,
       aiSummary,
     }
   })
