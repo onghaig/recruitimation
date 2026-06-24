@@ -1,5 +1,5 @@
 /**
- * Recrutimation — Indeed content script
+ * Recruitimation — Indeed content script
  *
  * Target: employers.indeed.com/jobs/:jobId/applicants
  *
@@ -58,7 +58,7 @@
 
     const candidates = scrapeApplicants()
     if (candidates.length === 0) {
-      console.log('[Recrutimation/Indeed] No candidates found on page')
+      console.log('[Recruitimation/Indeed] No candidates found on page')
       return
     }
 
@@ -67,13 +67,13 @@
       (c) => c.source_id && !lastPosted.has(c.source_id)
     )
     if (fresh.length === 0) {
-      console.log('[Recrutimation/Indeed] All candidates already posted this session')
+      console.log('[Recruitimation/Indeed] All candidates already posted this session')
       return
     }
 
     const platform_job_id = extractJobId()
     console.log(
-      `[Recrutimation/Indeed] Scraping ${fresh.length} candidates for job ${platform_job_id}`
+      `[Recruitimation/Indeed] Scraping ${fresh.length} candidates for job ${platform_job_id}`
     )
 
     // Send to background worker which holds the API URL config
@@ -86,17 +86,17 @@
       },
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Recrutimation/Indeed] Message error:', chrome.runtime.lastError.message)
+        console.error('[Recruitimation/Indeed] Message error:', chrome.runtime.lastError.message)
         return
       }
       if (response?.ok) {
         fresh.forEach((c) => c.source_id && lastPosted.add(c.source_id))
         console.log(
-          `[Recrutimation/Indeed] Posted ${fresh.length} candidates →`,
+          `[Recruitimation/Indeed] Posted ${fresh.length} candidates →`,
           response.result
         )
       } else {
-        console.error('[Recrutimation/Indeed] Ingest error:', response?.error)
+        console.error('[Recruitimation/Indeed] Ingest error:', response?.error)
       }
     })
   }

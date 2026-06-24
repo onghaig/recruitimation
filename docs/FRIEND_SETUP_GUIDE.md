@@ -1,6 +1,6 @@
-# Recrutimation — End-to-End Test Guide
+# Recruitimation — End-to-End Test Guide
 
-A walkthrough for running the full Recrutimation workflow. The app is **already deployed to the cloud**, so for the core test you don't install anything — you just need a web browser (Chrome recommended).
+A walkthrough for running the full Recruitimation workflow. The app is **already deployed to the cloud**, so for the core test you don't install anything — you just need a web browser (Chrome recommended).
 
 **Live URLs**
 - **App (use this):** https://frontend-production-5ab2.up.railway.app
@@ -103,14 +103,14 @@ The extension is the part that scrapes candidates off Indeed/LinkedIn. You can t
 
 ### Get the code
 ```bash
-git clone https://github.com/onghaig/recrutimation.git
-cd recrutimation
+git clone https://github.com/onghaig/recruitimation.git
+cd recruitimation
 ```
 
 ### A) Test the scraper with the fixture (no Indeed needed)
 1. In Chrome, open this file (adjust the path to where you cloned it):
    ```
-   file:///path/to/recrutimation/extension/test/indeed-fixture.html
+   file:///path/to/recruitimation/extension/test/indeed-fixture.html
    ```
 2. Click **"1. Scrape this page"** → you should see 3 candidates extracted as JSON.
 3. In the job-ID box paste `4db74ca3-4da9-45cf-92d2-8d3b857a8252`, then click **"2. POST to /api/ingest"**.
@@ -122,7 +122,7 @@ cd recrutimation
 1. Go to `chrome://extensions`
 2. Turn on **Developer mode** (top-right).
 3. Click **Load unpacked** → select the `extension/` folder.
-4. Click the Recrutimation icon → set the API URL to
+4. Click the Recruitimation icon → set the API URL to
    `https://backend-production-a0d3.up.railway.app` → **Save**.
 5. A green **Connected** dot means the extension reaches the backend.
 
@@ -141,8 +141,8 @@ cd recrutimation
 Not needed for the test above, but if you want to run the backend yourself:
 
 ```bash
-git clone https://github.com/onghaig/recrutimation.git
-cd recrutimation
+git clone https://github.com/onghaig/recruitimation.git
+cd recruitimation
 docker compose up -d                 # starts Postgres + Redis
 
 cd backend

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Recrutimation",
+  "name": "Recruitimation",
   "version": "1.0.0",
-  "description": "Ingest candidates from Indeed and LinkedIn into Recrutimation",
+  "description": "Ingest candidates from Indeed and LinkedIn into Recruitimation",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://employers.indeed.com/*",
@@ -43,6 +43,6 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Recrutimation"
+    "default_title": "Recruitimation"
   }
 }

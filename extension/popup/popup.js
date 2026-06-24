@@ -1,5 +1,5 @@
 /**
- * Recrutimation — Popup script
+ * Recruitimation — Popup script
  */
 
 const $ = (id) => document.getElementById(id)

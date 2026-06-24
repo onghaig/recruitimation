@@ -1,5 +1,5 @@
 /**
- * Recrutimation — Background service worker
+ * Recruitimation — Background service worker
  *
  * Receives INGEST messages from content scripts and POSTs to the API.
  * Also handles popup requests for sync status.
@@ -25,7 +25,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true, result })
       })
       .catch((err) => {
-        console.error('[Recrutimation/Background] Ingest failed:', err.message)
+        console.error('[Recruitimation/Background] Ingest failed:', err.message)
         syncStats.lastError = err.message
         sendResponse({ ok: false, error: err.message })
       })
@@ -41,7 +41,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true, result })
       })
       .catch((err) => {
-        console.error('[Recrutimation/Background] Enrich failed:', err.message)
+        console.error('[Recruitimation/Background] Enrich failed:', err.message)
         syncStats.lastError = err.message
         sendResponse({ ok: false, error: err.message })
       })
@@ -56,7 +56,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true, result })
       })
       .catch((err) => {
-        console.error('[Recrutimation/Background] PDF upload failed:', err.message)
+        console.error('[Recruitimation/Background] PDF upload failed:', err.message)
         syncStats.lastError = err.message
         sendResponse({ ok: false, error: err.message })
       })
@@ -78,9 +78,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 async function handleIngest(payload) {
   console.log(
-    `[Recrutimation/Background] Ingesting ${payload.candidates.length} candidates from ${payload.source}`
+    `[Recruitimation/Background] Ingesting ${payload.candidates.length} candidates from ${payload.source}`
   )
   return ingest(payload)
 }
 
-console.log('[Recrutimation/Background] Service worker started')
+console.log('[Recruitimation/Background] Service worker started')

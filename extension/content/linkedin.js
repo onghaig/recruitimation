@@ -1,5 +1,5 @@
 /**
- * Recrutimation — LinkedIn content script
+ * Recruitimation — LinkedIn content script
  *
  * Strategy: inject interceptor.js into the page context to proxy
  * XMLHttpRequest / fetch (can't do this from the isolated content-script world).
@@ -16,7 +16,7 @@
     script.src = chrome.runtime.getURL('interceptor.js')
     script.onload = () => script.remove()
     ;(document.head ?? document.documentElement).appendChild(script)
-    console.log('[Recrutimation/LinkedIn] Interceptor injected')
+    console.log('[Recruitimation/LinkedIn] Interceptor injected')
   }
 
   injectInterceptor()
@@ -24,7 +24,7 @@
   // Enable dev logging in the interceptor
   if (process?.env?.NODE_ENV === 'development') {
     const devScript = document.createElement('script')
-    devScript.textContent = 'window.__recrutimation_dev = true'
+    devScript.textContent = 'window.__recruitimation_dev = true'
     document.documentElement.appendChild(devScript)
     devScript.remove()
   }
@@ -33,7 +33,7 @@
   window.addEventListener('message', (event) => {
     if (
       event.source !== window ||
-      event.data?.type !== 'RECRUTIMATION_CANDIDATES'
+      event.data?.type !== 'RECRUITIMATION_CANDIDATES'
     ) {
       return
     }
@@ -42,7 +42,7 @@
     if (!Array.isArray(candidates) || candidates.length === 0) return
 
     console.log(
-      `[Recrutimation/LinkedIn] Received ${candidates.length} candidates from interceptor`
+      `[Recruitimation/LinkedIn] Received ${candidates.length} candidates from interceptor`
     )
 
     chrome.runtime.sendMessage(
@@ -56,19 +56,19 @@
       (response) => {
         if (chrome.runtime.lastError) {
           console.error(
-            '[Recrutimation/LinkedIn] Message error:',
+            '[Recruitimation/LinkedIn] Message error:',
             chrome.runtime.lastError.message
           )
           return
         }
         if (response?.ok) {
-          console.log('[Recrutimation/LinkedIn] Ingested:', response.result)
+          console.log('[Recruitimation/LinkedIn] Ingested:', response.result)
         } else {
-          console.error('[Recrutimation/LinkedIn] Ingest error:', response?.error)
+          console.error('[Recruitimation/LinkedIn] Ingest error:', response?.error)
         }
       }
     )
   })
 
-  console.log('[Recrutimation/LinkedIn] Content script loaded')
+  console.log('[Recruitimation/LinkedIn] Content script loaded')
 })()

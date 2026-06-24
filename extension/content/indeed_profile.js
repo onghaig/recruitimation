@@ -1,5 +1,5 @@
 /**
- * Recrutimation — Indeed applicant *profile* content script
+ * Recruitimation — Indeed applicant *profile* content script
  *
  * Target: employers.indeed.com/jobs/:jobId/applicants/:applicantId
  *
@@ -110,14 +110,14 @@
         },
         (res) => {
           if (chrome.runtime.lastError) return
-          console.log('[Recrutimation/Profile] Enriched', ids.applicantId, res?.result ?? res)
+          console.log('[Recruitimation/Profile] Enriched', ids.applicantId, res?.result ?? res)
         }
       )
     }
 
     const pdfUrl = findPdfUrl()
     if (!pdfUrl) {
-      console.log('[Recrutimation/Profile] No resume PDF found on this page')
+      console.log('[Recruitimation/Profile] No resume PDF found on this page')
       return
     }
     try {
@@ -139,11 +139,11 @@
         },
         (resp) => {
           if (chrome.runtime.lastError) return
-          console.log('[Recrutimation/Profile] PDF uploaded', resp?.result ?? resp)
+          console.log('[Recruitimation/Profile] PDF uploaded', resp?.result ?? resp)
         }
       )
     } catch (e) {
-      console.warn('[Recrutimation/Profile] PDF download/upload failed:', e.message)
+      console.warn('[Recruitimation/Profile] PDF download/upload failed:', e.message)
     }
   }
 

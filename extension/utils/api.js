@@ -1,5 +1,5 @@
 /**
- * Authenticated POST to the Recrutimation backend.
+ * Authenticated POST to the Recruitimation backend.
  * The API URL is stored in chrome.storage.sync so the recruiter
  * can point it at local dev or production.
  */

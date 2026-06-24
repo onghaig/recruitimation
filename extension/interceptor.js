@@ -1,5 +1,5 @@
 /**
- * Recrutimation — LinkedIn XHR/fetch interceptor
+ * Recruitimation — LinkedIn XHR/fetch interceptor
  *
  * This file runs in the PAGE context (not the extension isolated world)
  * so it can proxy XMLHttpRequest and window.fetch.
@@ -80,17 +80,17 @@
       return // not JSON
     }
 
-    if (window.__recrutimation_dev) {
-      console.log('[Recrutimation/Interceptor] Raw response from', url, data)
+    if (window.__recruitimation_dev) {
+      console.log('[Recruitimation/Interceptor] Raw response from', url, data)
     }
 
     const candidates = extractCandidates(data)
     if (candidates.length === 0) return
 
-    console.log(`[Recrutimation/Interceptor] Extracted ${candidates.length} profiles from`, url)
+    console.log(`[Recruitimation/Interceptor] Extracted ${candidates.length} profiles from`, url)
 
     window.postMessage(
-      { type: 'RECRUTIMATION_CANDIDATES', source: 'linkedin', candidates },
+      { type: 'RECRUITIMATION_CANDIDATES', source: 'linkedin', candidates },
       '*'
     )
   }
@@ -118,13 +118,13 @@
   const originalOpen = OriginalXHR.prototype.open
 
   OriginalXHR.prototype.open = function (method, url, ...rest) {
-    this._recrutimationUrl = url
+    this._recruitimationUrl = url
     return originalOpen.call(this, method, url, ...rest)
   }
 
   const originalSend = OriginalXHR.prototype.send
   OriginalXHR.prototype.send = function (...args) {
-    const url = this._recrutimationUrl ?? ''
+    const url = this._recruitimationUrl ?? ''
     if (matchesTarget(url)) {
       this.addEventListener('load', () => {
         if (this.status >= 200 && this.status < 300) {
@@ -135,5 +135,5 @@
     return originalSend.apply(this, args)
   }
 
-  console.log('[Recrutimation/Interceptor] Installed on LinkedIn page context')
+  console.log('[Recruitimation/Interceptor] Installed on LinkedIn page context')
 })()

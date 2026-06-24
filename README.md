@@ -1,4 +1,4 @@
-# Recrutimation
+# Recruitimation
 
 > AI-powered candidate screening for light industrial staffing.
 
@@ -92,7 +92,7 @@ Visit **http://localhost:5173/parse** to paste a candidate profile and validate 
 ## Project Structure
 
 ```
-recrutimation/
+recruitimation/
 ├── backend/            Node.js + Fastify API + BullMQ worker
 │   ├── prisma/         Database schema
 │   └── src/
