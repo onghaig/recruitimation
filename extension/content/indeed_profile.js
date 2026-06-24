@@ -41,7 +41,10 @@
 
   function scrapeDetail() {
     // Find the richest resume container; fall back to the main content area.
+    // The new /candidates/view profile renders the full résumé in
+    // ProfileResumePanel with profile-section-* blocks (Experience/Education).
     const containers = [
+      '[data-testid="ProfileResumePanel"]',
       '[data-testid="resume"]',
       '[data-testid="applicant-resume"]',
       '[data-testid="resume-section"]',
@@ -54,6 +57,12 @@
       const t = el?.innerText?.trim()
       if (t && t.length > text.length) text = t
     }
+    // Union the structured profile sections in case they sit outside the panel.
+    const sections = [...document.querySelectorAll('[data-testid^="profile-section-"]')]
+      .map((el) => el.innerText?.trim())
+      .filter(Boolean)
+      .join('\n\n')
+    if (sections.length > text.length) text = sections
     if (!text) text = (document.body.innerText || '').trim()
 
     const email =
@@ -74,13 +83,40 @@
 
   function findPdfUrl() {
     const a = document.querySelector(
-      'a[href$=".pdf"], a[href*=".pdf?"], a[download][href*="resume"], a[href*="/resume"][href*="pdf"]'
+      '[data-testid="download-resume-inline"], [data-testid="download-resume-moreActions"], ' +
+      'a[download][href^="blob:"], a[href$=".pdf"], a[href*=".pdf?"], ' +
+      'a[download][href*="resume"], a[href*="/resume"][href*="pdf"]'
     )
-    if (a) return a.href
+    if (a) return a.href || a.getAttribute('href')
     const emb = document.querySelector(
       'embed[type="application/pdf"], iframe[src*=".pdf"], object[data*=".pdf"]'
     )
     return emb?.src || emb?.getAttribute('data') || null
+  }
+
+  // Promise wrapper so we can await background round-trips and only signal
+  // PROFILE_DONE once the work for a profile is actually finished.
+  function sendMessageAsync(msg) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(msg, (res) => {
+          void chrome.runtime.lastError
+          resolve(res)
+        })
+      } catch {
+        resolve(undefined)
+      }
+    })
+  }
+
+  // The profile is an SPA — wait until the résumé panel has actually rendered
+  // before scraping, but don't wait forever.
+  const READY_TIMEOUT = 12000
+  const firstSeen = Date.now()
+  function isReady() {
+    if (document.querySelector('[data-testid="ResumePanel_loaded"]')) return true
+    const panel = document.querySelector('[data-testid="ProfileResumePanel"]')
+    return !!(panel && (panel.innerText || '').trim().length > 200)
   }
 
   async function blobToBase64(blob) {
@@ -96,13 +132,16 @@
 
   async function run() {
     const ids = getIds()
-    if (!ids || seen.has(ids.applicantId)) return
+    if (!ids) return
+    // Wait for the SPA résumé panel to render before committing to this profile.
+    if (!isReady() && Date.now() - firstSeen < READY_TIMEOUT) return
+    if (seen.has(ids.applicantId)) return
     seen.add(ids.applicantId)
 
-    const detail = scrapeDetail()
-    if (detail.raw_text && detail.raw_text.length > 80) {
-      chrome.runtime.sendMessage(
-        {
+    try {
+      const detail = scrapeDetail()
+      if (detail.raw_text && detail.raw_text.length > 80) {
+        const res = await sendMessageAsync({
           type: 'ENRICH',
           payload: {
             source: 'indeed',
@@ -113,43 +152,39 @@
             phone: detail.phone,
             location: detail.location,
           },
-        },
-        (res) => {
-          if (chrome.runtime.lastError) return
-          console.log('[Recruitimation/Profile] Enriched', ids.applicantId, res?.result ?? res)
-        }
-      )
-    }
+        })
+        console.log('[Recruitimation/Profile] Enriched', ids.applicantId, res?.result ?? res)
+      }
 
-    const pdfUrl = findPdfUrl()
-    if (!pdfUrl) {
-      console.log('[Recruitimation/Profile] No resume PDF found on this page')
-      return
-    }
-    try {
-      // Download using the recruiter's active session — only reaches PDFs the
-      // logged-in account is already authorised to see.
-      const res = await fetch(pdfUrl, { credentials: 'include' })
-      if (!res.ok) throw new Error(`PDF HTTP ${res.status}`)
-      const blob = await res.blob()
-      const base64 = await blobToBase64(blob)
-      chrome.runtime.sendMessage(
-        {
-          type: 'INGEST_PDF',
-          payload: {
-            source: 'indeed',
-            source_id: ids.applicantId,
-            base64,
-            mimetype: blob.type || 'application/pdf',
-          },
-        },
-        (resp) => {
-          if (chrome.runtime.lastError) return
+      const pdfUrl = findPdfUrl()
+      if (pdfUrl) {
+        try {
+          // Download using the recruiter's active session — only reaches PDFs
+          // the logged-in account is already authorised to see.
+          const res = await fetch(pdfUrl, { credentials: 'include' })
+          if (!res.ok) throw new Error(`PDF HTTP ${res.status}`)
+          const blob = await res.blob()
+          const base64 = await blobToBase64(blob)
+          const resp = await sendMessageAsync({
+            type: 'INGEST_PDF',
+            payload: {
+              source: 'indeed',
+              source_id: ids.applicantId,
+              base64,
+              mimetype: blob.type || 'application/pdf',
+            },
+          })
           console.log('[Recruitimation/Profile] PDF uploaded', resp?.result ?? resp)
+        } catch (e) {
+          console.warn('[Recruitimation/Profile] PDF download/upload failed:', e.message)
         }
-      )
-    } catch (e) {
-      console.warn('[Recruitimation/Profile] PDF download/upload failed:', e.message)
+      } else {
+        console.log('[Recruitimation/Profile] No resume PDF found on this page')
+      }
+    } finally {
+      // Always tell the auto-iterate controller this profile is done so it can
+      // advance (no-op when no controller is running).
+      sendMessageAsync({ type: 'PROFILE_DONE', source_id: ids.applicantId })
     }
   }
 

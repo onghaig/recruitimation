@@ -39,6 +39,23 @@
     return fromRow ?? new URLSearchParams(location.search).get('id')
   }
 
+  // Build the queue of profile pages for the background auto-iterator. Uses the
+  // full NameCell href (keeps listQuery/legacyJobId params so the profile renders
+  // when navigated to directly).
+  function buildProfileQueue() {
+    const rows = [...document.querySelectorAll(ROW_SELECTOR)]
+    const seen = new Set()
+    const items = []
+    for (const row of rows) {
+      const href = row.querySelector(NAME_SELECTOR)?.getAttribute('href')
+      const source_id = getParam(href, 'id')
+      if (!href || !source_id || seen.has(source_id)) continue
+      seen.add(source_id)
+      items.push({ source_id, url: new URL(href, location.origin).href })
+    }
+    return { jobId: extractJobId(), items }
+  }
+
   function scrapeCandidates() {
     const rows = [...document.querySelectorAll(ROW_SELECTOR)]
     return rows.map((row) => {
@@ -104,6 +121,18 @@
       }
     })
   }
+
+  // ── Popup → controller: hand over the profile queue ────────────────────────
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'GET_PROFILE_QUEUE') {
+      // Make sure the list rows have been ingested (candidates must exist before
+      // the per-profile enrich runs), then return the queue.
+      runScrape()
+      sendResponse({ ok: true, ...buildProfileQueue() })
+      return false
+    }
+    return false
+  })
 
   // ── MutationObserver with 500 ms debounce ──────────────────────────────────
   let debounceTimer = null

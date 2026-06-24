@@ -3,7 +3,7 @@
   "name": "Recruitimation",
   "version": "1.0.0",
   "description": "Ingest candidates from Indeed and LinkedIn into Recruitimation",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": [
     "https://employers.indeed.com/*",
     "https://www.linkedin.com/talent/*",
