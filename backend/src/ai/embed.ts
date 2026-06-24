@@ -17,9 +17,9 @@ type NvidiaEmbeddingParams = Parameters<typeof openai.embeddings.create>[0] & {
 }
 
 /**
- * Embed a text string using nvidia/nv-embedqa-e5-v5.
- * input_type must be 'query' for job descriptions and 'passage' for resume text —
- * nv-embedqa-e5-v5 is asymmetric and uses different embedding spaces for each.
+ * Embed a text string using baai/bge-m3 (8192-token context) on NVIDIA NIM.
+ * input_type is 'query' for job descriptions and 'passage' for resume text
+ * (retained from the asymmetric e5 model; bge-m3 accepts it as a retrieval hint).
  * Returns a float array.
  */
 export async function embed(
@@ -27,11 +27,12 @@ export async function embed(
   input_type: 'query' | 'passage'
 ): Promise<number[]> {
   const response = await openai.embeddings.create({
-    model: 'nvidia/nv-embedqa-e5-v5',
-    // The model caps input at 512 tokens. truncate:'END' tells the server to
-    // trim to that limit instead of returning a 400 — without it, any resume or
-    // job description longer than ~512 tokens fails the whole scoring request.
-    input: text.slice(0, 8000),
+    // baai/bge-m3 has an 8192-token context (vs 512 for nv-embedqa-e5-v5), so the
+    // whole resume / job description is embedded instead of just the first ~512
+    // tokens. ~30k chars (~7.5k tokens) keeps us under the cap; truncate:'END' is
+    // the safety net for anything longer so it trims server-side instead of 400ing.
+    model: 'baai/bge-m3',
+    input: text.slice(0, 30000),
     input_type,
     truncate: 'END',
   } as NvidiaEmbeddingParams)
