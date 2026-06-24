@@ -5,6 +5,27 @@ import { Plus, Pencil, Trash2, Zap, CheckCircle, PauseCircle, XCircle, Loader2 }
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
 import type { Job } from '../types'
+import { useCandidateCount } from '../hooks/useCandidateCount'
+
+// Review button + live candidate counts for one job card.
+function JobReviewButton({ jobId, onReview }: { jobId: string; onReview: () => void }) {
+  const { data: c } = useCandidateCount(jobId)
+  return (
+    <div className="flex-1">
+      <button className="btn-primary text-xs py-1.5 w-full" onClick={onReview}>
+        <Zap size={13} /> Review Candidates
+        {c && c.scored > 0 && (
+          <span className="ml-1 opacity-90">{c.toReview}/{c.scored}</span>
+        )}
+      </button>
+      {c && c.ingesting > 0 && (
+        <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+          <Loader2 size={10} className="animate-spin" /> {c.ingesting} still ingesting
+        </p>
+      )}
+    </div>
+  )
+}
 
 const statusIcon: Record<string, React.ReactNode> = {
   open: <CheckCircle size={14} className="text-emerald-500" />,
@@ -210,12 +231,7 @@ export default function JobManager() {
               {job.description}
             </p>
             <div className="flex gap-2">
-              <button
-                className="btn-primary text-xs py-1.5 flex-1"
-                onClick={() => navigate(`/swipe/${job.id}`)}
-              >
-                <Zap size={13} /> Review Candidates
-              </button>
+              <JobReviewButton jobId={job.id} onReview={() => navigate(`/swipe/${job.id}`)} />
             </div>
           </div>
         ))}

@@ -86,6 +86,20 @@ export const api = {
 
       return params?.limit ? result.slice(0, params.limit) : result
     },
+    candidatesCount: async (jobId: string) => {
+      await delay()
+      const forJob = candidates.filter((c) => c.jobId === jobId)
+      const scoredList = forJob.filter((c) => c.scoredAt)
+      const decidedIds = new Set(decisions.map((d) => d.candidateId))
+      const reviewed = scoredList.filter((c) => decidedIds.has(c.id)).length
+      return {
+        total: forJob.length,
+        scored: scoredList.length,
+        ingesting: forJob.length - scoredList.length,
+        reviewed,
+        toReview: scoredList.length - reviewed,
+      }
+    },
   },
 
   candidates: {

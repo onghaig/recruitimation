@@ -8,6 +8,7 @@ import { api } from '../api/client'
 import type { Job, Candidate } from '../types'
 import CandidateCard from '../components/CandidateCard'
 import PdfViewer from '../components/PdfViewer'
+import { useCandidateCount } from '../hooks/useCandidateCount'
 
 function JobPicker({ jobs, onSelect }: { jobs: Job[]; onSelect: (id: string) => void }) {
   return (
@@ -101,6 +102,8 @@ export default function SwipeDeck() {
     enabled: !!jobId,
   })
 
+  const { data: counts } = useCandidateCount(jobId)
+
   const decideMutation = useMutation({
     mutationFn: ({
       candidateId,
@@ -166,8 +169,14 @@ export default function SwipeDeck() {
         <div className="text-center">
           <h1 className="font-bold text-lg">{selectedJob?.title}</h1>
           <p className="text-sm text-slate-500">
-            {index + 1} / {candidates.length} candidates
+            {index + 1} / {candidates.length} to review
+            {counts ? ` · ${counts.scored} total` : ''}
           </p>
+          {counts && counts.ingesting > 0 && (
+            <p className="text-xs text-slate-400 flex items-center justify-center gap-1 mt-0.5">
+              <Loader2 size={10} className="animate-spin" /> {counts.ingesting} still ingesting
+            </p>
+          )}
         </div>
         <div className="w-24" />
       </div>

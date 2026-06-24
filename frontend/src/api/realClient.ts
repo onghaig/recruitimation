@@ -31,6 +31,10 @@ export const api = {
       if (params?.limit) qs.set('limit', String(params.limit))
       return request<Candidate[]>(`/api/jobs/${id}/candidates?${qs}`)
     },
+    candidatesCount: (id: string) =>
+      request<{ total: number; scored: number; ingesting: number; reviewed: number; toReview: number }>(
+        `/api/jobs/${id}/candidates/count`,
+      ),
   },
 
   candidates: {

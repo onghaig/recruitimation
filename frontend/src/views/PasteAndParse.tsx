@@ -1,15 +1,72 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Loader2, Zap, CheckCircle, Layers, Users, FileText, X } from 'lucide-react'
+import { Loader2, Zap, CheckCircle, Layers, Users, FileText, X, History, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
 import type { ParseResult } from '../types'
 import type { FileExtract } from '../utils/extractText'
 import ScoreChip from '../components/ScoreChip'
 import DocumentDropzone from '../components/DocumentDropzone'
+import { useIngestHistory, type IngestHistoryEntry } from '../hooks/useIngestHistory'
+import { useCandidateCount } from '../hooks/useCandidateCount'
 
 function fileBaseName(name: string): string {
   return name.replace(/\.[^.]+$/, '')
+}
+
+function timeAgo(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000)
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+
+// One history row. Batch rows poll live job counts so progress resumes after a
+// page refresh (jobId comes from localStorage).
+function HistoryItem({ entry }: { entry: IngestHistoryEntry }) {
+  const { data: counts } = useCandidateCount(entry.type === 'batch' ? entry.jobId : null)
+  return (
+    <div className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          {entry.type === 'batch' ? (
+            <Layers size={13} className="text-brand-500 shrink-0" />
+          ) : (
+            <FileText size={13} className="text-slate-400 shrink-0" />
+          )}
+          <span className="font-medium truncate">
+            {entry.type === 'batch'
+              ? `${entry.count} candidates → ${entry.jobTitle}`
+              : `${entry.candidateName ?? 'Candidate'} → ${entry.jobTitle}`}
+          </span>
+        </div>
+        {entry.type === 'batch' && counts && (
+          <div className="mt-1">
+            <div className="h-1.5 w-44 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full bg-brand-500 transition-all"
+                style={{ width: `${counts.scored ? Math.round((counts.scored / Math.max(counts.total, 1)) * 100) : 0}%` }}
+              />
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {counts.scored}/{counts.total} scored
+              {counts.ingesting > 0 ? ` · ${counts.ingesting} ingesting` : ' · done'}
+            </p>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {entry.type === 'single' && (
+          <>
+            <ScoreChip label="M" value={entry.matchScore ?? null} size="sm" />
+            <ScoreChip label="W" value={entry.willingScore ?? null} size="sm" />
+          </>
+        )}
+        <span className="text-xs text-slate-400">{timeAgo(entry.createdAt)}</span>
+      </div>
+    </div>
+  )
 }
 
 export default function PasteAndParse() {
@@ -22,12 +79,14 @@ export default function PasteAndParse() {
   const [result, setResult] = useState<ParseResult | null>(null)
   const [mode, setMode] = useState<'combine' | 'batch'>('combine')
   const [batchFiles, setBatchFiles] = useState<FileExtract[]>([])
-  const [batchJobId, setBatchJobId] = useState<string | null>(null)
+  const { history, add: addHistory, clear: clearHistory } = useIngestHistory()
 
   const { data: jobs = [] } = useQuery({
     queryKey: ['jobs'],
     queryFn: api.jobs.list,
   })
+
+  const resolvedTitle = () => jobs.find((j) => j.id === selectedJobId)?.title ?? jobTitle
 
   const parseMutation = useMutation({
     mutationFn: () =>
@@ -49,6 +108,13 @@ export default function PasteAndParse() {
       }),
     onSuccess: (data) => {
       setResult(data)
+      addHistory({
+        type: 'single',
+        jobTitle: resolvedTitle(),
+        candidateName: data.parsed.name ?? 'Unknown',
+        matchScore: data.matchScore,
+        willingScore: data.willingScore,
+      })
       toast.success('Parsed and scored!')
     },
     onError: (err) => toast.error(err.message),
@@ -64,19 +130,16 @@ export default function PasteAndParse() {
         candidates: okBatchFiles.map((f) => ({ raw_text: f.text, name: fileBaseName(f.name) })),
       }),
     onSuccess: (data) => {
-      setBatchJobId(selectedJobId)
       setBatchFiles([])
+      addHistory({
+        type: 'batch',
+        jobId: selectedJobId,
+        jobTitle: resolvedTitle(),
+        count: data.ingested,
+      })
       toast.success(`Queued ${data.ingested} candidate${data.ingested === 1 ? '' : 's'}`)
     },
     onError: (err) => toast.error(err.message),
-  })
-
-  // Poll the job's candidates so the recruiter can watch the queue drain.
-  const { data: progressCandidates = [] } = useQuery({
-    queryKey: ['jobs', batchJobId, 'candidates'],
-    queryFn: () => api.jobs.candidates(batchJobId as string),
-    enabled: !!batchJobId,
-    refetchInterval: 4000,
   })
 
   const handleJobSelect = (id: string) => {
@@ -274,32 +337,27 @@ export default function PasteAndParse() {
         </button>
       )}
 
-      {/* Batch queue progress */}
-      {batchJobId && progressCandidates.length > 0 && (() => {
-        const total = progressCandidates.length
-        const scored = progressCandidates.filter((c) => c.scoredAt).length
-        const pct = Math.round((scored / total) * 100)
-        return (
-          <div className="card p-6 mb-8 space-y-3">
-            <div className="flex items-center gap-3">
-              {scored < total ? (
-                <Loader2 className="animate-spin text-brand-500" size={20} />
-              ) : (
-                <CheckCircle className="text-emerald-500" size={20} />
-              )}
-              <h2 className="font-bold">
-                {scored < total ? 'Scoring in progress…' : 'All candidates scored'}
-              </h2>
-            </div>
-            <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} />
-            </div>
-            <p className="text-sm text-slate-500">
-              {scored} of {total} candidates scored for this job. They appear in the dashboard as they finish.
-            </p>
+      {/* History — past parsing attempts, persisted across refresh/tabs */}
+      {history.length > 0 && (
+        <div className="card p-5 mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold flex items-center gap-2">
+              <History size={16} /> History
+            </h2>
+            <button
+              className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"
+              onClick={clearHistory}
+            >
+              <Trash2 size={12} /> Clear
+            </button>
           </div>
-        )
-      })()}
+          <div className="divide-y divide-slate-100">
+            {history.map((entry) => (
+              <HistoryItem key={entry.id} entry={entry} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Result */}
       {result && (
