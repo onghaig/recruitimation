@@ -50,8 +50,10 @@ export async function candidateRoutes(fastify: FastifyInstance) {
     const firstJob = parsed.jobs[0]
     const willingnessResult = await scoreWillingness({
       jobTitle: body.jobTitle,
+      jobDescription: body.jobDescription,
       jobPayRange: body.jobPayRange,
       jobLocation: body.jobLocation,
+      candidateLocation: parsed.location,
       mostRecentRole: firstJob?.role,
       employer: firstJob?.employer,
       jobsJson: parsed.jobs,

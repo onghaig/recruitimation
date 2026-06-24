@@ -16,8 +16,10 @@ export interface WillingnessResult {
 
 export interface ScoreInput {
   jobTitle: string
+  jobDescription?: string | null
   jobPayRange?: string | null
   jobLocation?: string | null
+  candidateLocation?: string | null
   mostRecentRole?: string
   employer?: string
   duration?: string
@@ -57,25 +59,44 @@ export function parseJsonLoose<T>(raw: string, fallback: T): T {
  * Ask Claude to estimate willingness score (0-100) and surface flags.
  */
 export async function scoreWillingness(input: ScoreInput): Promise<WillingnessResult> {
-  const prompt = `You are assessing whether a job candidate is likely to accept and stay in a role.
+  const prompt = `You are screening a job candidate for a specific role. Be strict — this is
+first-pass filtering for a staffing agency, and the recruiter's time and contact credits are
+limited. When in doubt, score lower.
 
-Job: ${input.jobTitle}${input.jobPayRange ? `, ${input.jobPayRange}` : ''}${input.jobLocation ? `, ${input.jobLocation}` : ''}
-Candidate's most recent role: ${input.mostRecentRole ?? 'Unknown'} at ${input.employer ?? 'Unknown'}${input.duration ? `, ${input.duration}` : ''}
-Candidate's full job history: ${JSON.stringify(input.jobsJson ?? [])}
-Distance from job: ${input.distanceMi != null ? `${input.distanceMi} miles` : 'Unknown'}
+JOB
+Title: ${input.jobTitle}${input.jobPayRange ? `\nPay: ${input.jobPayRange}` : ''}${input.jobLocation ? `\nLocation: ${input.jobLocation}` : ''}
+Full description and requirements:
+${input.jobDescription ?? '(no description provided)'}
+
+CANDIDATE
+Location: ${input.candidateLocation ?? 'Unknown'}
+Most recent role: ${input.mostRecentRole ?? 'Unknown'} at ${input.employer ?? 'Unknown'}${input.duration ? `, ${input.duration}` : ''}
+Full job history: ${JSON.stringify(input.jobsJson ?? [])}
+Distance from job: ${input.distanceMi != null ? `${input.distanceMi} miles` : 'Unknown — estimate the commute from the two locations above'}
 Resume last active: ${input.resumeLastActive ?? 'Unknown'}
 
-Score from 0–100 how likely this candidate is to:
-1. Respond to outreach
-2. Accept the role if offered
-3. Stay past 30 days
+Assess on TWO axes. REQUIREMENT FIT is by far the most important:
+
+1. REQUIREMENT FIT (dominant factor): Read the job's requirements carefully. Does the candidate's
+history clearly show the experience and skills the job requires? If the description marks anything
+as "required" and the candidate does not clearly have it, treat that as a major disqualifier.
+Heavily penalise candidates whose background is in an unrelated field, even when the work is
+similarly low-skill (e.g. housekeeping experience does NOT qualify someone for a mailroom or
+warehouse role). Do not give credit for vaguely "transferable" soft skills when specific experience
+is required. A candidate who lacks required experience must score below 30 no matter how willing
+they appear.
+
+2. WILLINGNESS: likelihood to respond to outreach, accept if offered, and stay past 30 days.
+Penalise: overqualification, large upward pay gap, long commute for low-wage role, resume inactive
+> 3 months, very recent job start (they just started somewhere else). Reward: exact title match,
+local, recently active, similar pay history.
+
+Return a single willing_score 0–100 that reflects BOTH axes but is dominated by requirement fit.
+In flags, add "lacks required <X>" for each unmet required item and "irrelevant experience" when the
+background is in an unrelated field.
 
 Return JSON only — no prose before or after:
-{ "willing_score": number, "flags": string[], "reasoning": string }
-
-Penalise heavily for: overqualification, large pay gap upward, long commute for low-wage role,
-resume inactive > 3 months, very recent job start (they just started somewhere else).
-Reward: exact title match, local, recently active, similar pay history, gaps in employment.`
+{ "willing_score": number, "flags": string[], "reasoning": string }`
 
   const message = await openai.chat.completions.create({
     model: 'meta/llama-3.3-70b-instruct',

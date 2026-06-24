@@ -82,8 +82,10 @@ const worker = new Worker<ScoreJobData>(
 
     const willingnessResult = await scoreWillingness({
       jobTitle: jobRecord.title,
+      jobDescription: jobRecord.description,
       jobPayRange: jobRecord.payRange,
       jobLocation: jobRecord.location,
+      candidateLocation: candidate.location ?? parsedFields.location ?? null,
       mostRecentRole: firstJob?.role,
       employer: firstJob?.employer,
       duration:
