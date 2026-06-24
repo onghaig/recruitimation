@@ -10,10 +10,6 @@ import DocumentDropzone from '../components/DocumentDropzone'
 import { useIngestHistory, type IngestHistoryEntry } from '../hooks/useIngestHistory'
 import { useCandidateCount } from '../hooks/useCandidateCount'
 
-function fileBaseName(name: string): string {
-  return name.replace(/\.[^.]+$/, '')
-}
-
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000)
   if (s < 60) return 'just now'
@@ -127,7 +123,9 @@ export default function PasteAndParse() {
       api.candidates.ingest({
         source: 'paste',
         job_id: selectedJobId,
-        candidates: okBatchFiles.map((f) => ({ raw_text: f.text, name: fileBaseName(f.name) })),
+        // Don't send the filename as the name — let the worker's parse extract
+        // the real name from the résumé text (it only backfills when name is empty).
+        candidates: okBatchFiles.map((f) => ({ raw_text: f.text })),
       }),
     onSuccess: (data) => {
       setBatchFiles([])
