@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
 import { ThumbsUp, Bookmark, X, ChevronLeft, Loader2, CheckSquare, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
-import type { Job, Candidate } from '../types'
+import type { Job } from '../types'
 import CandidateCard from '../components/CandidateCard'
 import PdfViewer from '../components/PdfViewer'
 import { useCandidateCount } from '../hooks/useCandidateCount'
@@ -30,73 +29,13 @@ function JobPicker({ jobs, onSelect }: { jobs: Job[]; onSelect: (id: string) => 
   )
 }
 
-interface CardDragProps {
-  candidate: Candidate
-  onDecide: (decision: 'keep' | 'skip') => void
-}
-
-function DraggableCard({ candidate, onDecide }: CardDragProps) {
-  const x = useMotionValue(0)
-  const rotate = useTransform(x, [-200, 200], [-12, 12])
-  const keepOpacity = useTransform(x, [40, 120], [0, 1])
-  const skipOpacity = useTransform(x, [-120, -40], [1, 0])
-  const [exitX, setExitX] = useState(0)
-  // Lock so a single card can only be decided once (prevents double-swipe).
-  const decided = useRef(false)
-
-  const fling = (decision: 'keep' | 'skip') => {
-    if (decided.current) return
-    decided.current = true
-    setExitX(decision === 'keep' ? 700 : -700)
-    onDecide(decision)
-  }
-
-  const handleDragEnd = (_: unknown, info: { offset: { x: number }; velocity: { x: number } }) => {
-    if (decided.current) return
-    if (info.offset.x > 90 || info.velocity.x > 700) fling('keep')
-    else if (info.offset.x < -90 || info.velocity.x < -700) fling('skip')
-    // otherwise dragConstraints springs it back to center automatically
-  }
-
-  return (
-    <motion.div
-      style={{ x, rotate }}
-      drag={decided.current ? false : 'x'}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.6}
-      onDragEnd={handleDragEnd}
-      initial={{ scale: 0.96, y: 10, opacity: 0.5 }}
-      animate={{ scale: 1, y: 0, opacity: 1, transition: { type: 'spring', stiffness: 520, damping: 38 } }}
-      exit={{ x: exitX, opacity: 0, scale: 0.92, transition: { duration: 0.18 } }}
-      className="relative z-10 cursor-grab active:cursor-grabbing"
-    >
-      {/* Keep indicator */}
-      <motion.div
-        style={{ opacity: keepOpacity }}
-        className="absolute top-6 left-6 bg-emerald-500 text-white text-lg font-bold px-3 py-1 rounded-lg rotate-[-15deg] z-10 pointer-events-none"
-      >
-        KEEP ✓
-      </motion.div>
-      {/* Skip indicator */}
-      <motion.div
-        style={{ opacity: skipOpacity }}
-        className="absolute top-6 right-6 bg-red-500 text-white text-lg font-bold px-3 py-1 rounded-lg rotate-[15deg] z-10 pointer-events-none"
-      >
-        SKIP ✗
-      </motion.div>
-      <CandidateCard candidate={candidate} variant="swipe" />
-    </motion.div>
-  )
-}
-
 export default function SwipeDeck() {
   const { jobId: routeJobId } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [jobId, setJobId] = useState<string | null>(routeJobId ?? null)
   const [index, setIndex] = useState(0)
-  const [pinModal, setPinModal] = useState<{ candidate: Candidate } | null>(null)
-  const [pinNote, setPinNote] = useState('')
+  const [comment, setComment] = useState('')
   const [showPdf, setShowPdf] = useState(false)
 
   useEffect(() => {
@@ -113,9 +52,9 @@ export default function SwipeDeck() {
     queryFn: api.jobs.list,
   })
 
-  // Stable session snapshot: with optimistic swiping the deck advances locally,
-  // so a mid-session refetch (e.g. window refocus) must not reshuffle the list
-  // out from under `index`. It still refetches fresh on mount / job change.
+  // Stable session snapshot: decisions are optimistic and we don't refetch per
+  // decision, so a mid-session refetch must not reshuffle the list under `index`.
+  // It still refetches fresh on mount / job change.
   const { data: candidates = [], isLoading } = useQuery({
     queryKey: ['candidates', jobId, 'undecided'],
     queryFn: () => api.jobs.candidates(jobId!, { decision: 'undecided', limit: 100 }),
@@ -126,9 +65,6 @@ export default function SwipeDeck() {
 
   const { data: counts } = useCandidateCount(jobId)
 
-  // Fire-and-forget so the UI never waits on the network. We advance the deck
-  // optimistically; counts refresh on settle (the deck list itself stays stable
-  // for the whole session so undo can step back through it).
   const decideMutation = useMutation({
     mutationFn: ({
       candidateId,
@@ -150,27 +86,52 @@ export default function SwipeDeck() {
 
   const current = candidates[index]
 
-  // Decide on the current card and advance immediately (optimistic).
-  const decide = (decision: 'keep' | 'pin' | 'skip', pinNote?: string) => {
+  // Decide on the current candidate (optionally with a comment) and advance.
+  const decide = (decision: 'keep' | 'pin' | 'skip') => {
     if (!current) return
-    decideMutation.mutate({ candidateId: current.id, decision, pinNote })
-    const label = decision === 'keep' ? '✅ Kept' : decision === 'pin' ? '📌 Pinned' : '⏭ Skipped'
+    decideMutation.mutate({
+      candidateId: current.id,
+      decision,
+      pinNote: comment.trim() || undefined,
+    })
+    const label = decision === 'keep' ? '✅ Liked' : decision === 'pin' ? '📌 Pinned' : '⏭ Disliked'
     toast.success(label, { duration: 1000 })
     setIndex((i) => i + 1)
+    setComment('')
     setShowPdf(false)
-    setPinModal(null)
-    setPinNote('')
   }
 
-  // Step back to the previous candidate and clear its decision server-side.
   const undo = () => {
     if (index === 0) return
     const prev = candidates[index - 1]
     setIndex((i) => i - 1)
+    setComment('')
     setShowPdf(false)
     if (prev) undoMutation.mutate(prev.id)
     toast('Undone', { icon: '↩️', duration: 1000 })
   }
+
+  // Arrow-key review: ← Dislike, ↓ Pin, → Like. Ignored while typing a comment.
+  // No deps array so the handler always sees the latest candidate + comment.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (!current) return
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        decide('skip')
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        decide('keep')
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        decide('pin')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (!jobId) {
     return <JobPicker jobs={jobs} onSelect={(id) => { setJobId(id); navigate(`/swipe/${id}`) }} />
@@ -233,21 +194,13 @@ export default function SwipeDeck() {
       <div className="w-full max-w-sm mb-6 bg-slate-200 rounded-full h-1.5">
         <div
           className="bg-brand-500 h-1.5 rounded-full transition-all"
-          style={{ width: `${((index) / Math.max(candidates.length, 1)) * 100}%` }}
+          style={{ width: `${(index / Math.max(candidates.length, 1)) * 100}%` }}
         />
       </div>
 
-      {/* Card stack */}
-      <div className="relative w-full max-w-lg mb-6">
-        {/* Ghost cards underneath */}
-        {candidates[index + 1] && (
-          <div className="absolute inset-0 scale-95 translate-y-2 opacity-40 pointer-events-none">
-            <CandidateCard candidate={candidates[index + 1]} variant="swipe" />
-          </div>
-        )}
-        <AnimatePresence initial={false}>
-          <DraggableCard key={current.id} candidate={current} onDecide={(d) => decide(d)} />
-        </AnimatePresence>
+      {/* Candidate card */}
+      <div className="w-full max-w-lg mb-4">
+        <CandidateCard candidate={current} variant="swipe" />
       </div>
 
       {/* PDF viewer toggle */}
@@ -263,6 +216,17 @@ export default function SwipeDeck() {
         </div>
       )}
 
+      {/* Optional comment */}
+      <div className="w-full max-w-lg mb-4">
+        <textarea
+          className="input"
+          rows={2}
+          placeholder="Optional comment (saved with your decision)…"
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+        />
+      </div>
+
       {/* Action buttons */}
       <div className="flex gap-4">
         <button
@@ -270,53 +234,28 @@ export default function SwipeDeck() {
           onClick={() => decide('skip')}
         >
           <X size={22} />
-          <span className="text-xs font-medium">Skip</span>
+          <span className="text-xs font-medium">Dislike</span>
+          <span className="text-[10px] text-red-400">←</span>
         </button>
         <button
           className="flex flex-col items-center gap-1 p-4 rounded-2xl bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors"
-          onClick={() => setPinModal({ candidate: current })}
+          onClick={() => decide('pin')}
         >
           <Bookmark size={22} />
           <span className="text-xs font-medium">Pin</span>
+          <span className="text-[10px] text-blue-400">↓</span>
         </button>
         <button
           className="flex flex-col items-center gap-1 p-4 rounded-2xl bg-emerald-100 hover:bg-emerald-200 text-emerald-600 transition-colors"
           onClick={() => decide('keep')}
         >
           <ThumbsUp size={22} />
-          <span className="text-xs font-medium">Keep</span>
+          <span className="text-xs font-medium">Like</span>
+          <span className="text-[10px] text-emerald-400">→</span>
         </button>
       </div>
 
-      {/* Pin modal */}
-      {pinModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="card p-6 w-full max-w-md">
-            <h3 className="font-semibold text-lg mb-2">
-              Pin {pinModal.candidate.name}
-            </h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Add a note or follow-up reminder (optional)
-            </p>
-            <textarea
-              className="input mb-3"
-              rows={3}
-              placeholder="Notes about this candidate…"
-              value={pinNote}
-              onChange={(e) => setPinNote(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <button className="btn-secondary" onClick={() => { setPinModal(null); setPinNote('') }}>
-                Cancel
-              </button>
-              <button className="btn-primary" onClick={() => decide('pin', pinNote || undefined)}>
-                <Bookmark size={14} />
-                Pin
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <p className="text-xs text-slate-400 mt-4">← Dislike · ↓ Pin · → Like</p>
     </div>
   )
 }
