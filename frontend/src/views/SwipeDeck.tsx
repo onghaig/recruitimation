@@ -103,15 +103,25 @@ export default function SwipeDeck() {
     if (routeJobId) setJobId(routeJobId)
   }, [routeJobId])
 
+  // Start at the first candidate whenever the job changes.
+  useEffect(() => {
+    setIndex(0)
+  }, [jobId])
+
   const { data: jobs = [] } = useQuery({
     queryKey: ['jobs'],
     queryFn: api.jobs.list,
   })
 
+  // Stable session snapshot: with optimistic swiping the deck advances locally,
+  // so a mid-session refetch (e.g. window refocus) must not reshuffle the list
+  // out from under `index`. It still refetches fresh on mount / job change.
   const { data: candidates = [], isLoading } = useQuery({
     queryKey: ['candidates', jobId, 'undecided'],
     queryFn: () => api.jobs.candidates(jobId!, { decision: 'undecided', limit: 100 }),
     enabled: !!jobId,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
   })
 
   const { data: counts } = useCandidateCount(jobId)
