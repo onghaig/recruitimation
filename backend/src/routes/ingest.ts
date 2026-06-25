@@ -18,6 +18,7 @@ const CandidateInputSchema = z.object({
 const IngestBodySchema = z.object({
   source: z.enum(['indeed', 'linkedin', 'paste']),
   platform_job_id: z.string().optional(),
+  platform_job_title: z.string().optional(), // scraped from the page, names auto-created jobs
   job_id: z.string().uuid().optional(), // internal job UUID if known
   candidates: z.array(CandidateInputSchema),
 })
@@ -46,7 +47,7 @@ export async function ingestRoutes(fastify: FastifyInstance) {
       if (!jobId) {
         const stub = await prisma.job.create({
           data: {
-            title: `${body.source} job ${body.platform_job_id}`,
+            title: body.platform_job_title?.trim() || `${body.source} job ${body.platform_job_id}`,
             description: '',
             platform: body.source,
             platformId: body.platform_job_id,

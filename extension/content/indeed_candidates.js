@@ -46,6 +46,24 @@
     return fromRow ?? new URLSearchParams(location.search).get('id')
   }
 
+  // Best-effort job title so an auto-created job is named (e.g. "Mailroom Clerk")
+  // instead of "indeed job <id>". Tries a few likely headers, then the page
+  // <title> with the site/section noise stripped. Returns null if nothing usable.
+  function extractJobTitle() {
+    const SELECTORS = [
+      '[data-testid="job-title"]',
+      '[data-testid="JobTitle"]',
+      '[class*="jobTitle"]',
+      'h1',
+    ]
+    for (const sel of SELECTORS) {
+      const t = document.querySelector(sel)?.innerText?.trim()
+      if (t && t.length <= 120) return t
+    }
+    const dt = (document.title || '').split('|')[0].split(' - ')[0].trim()
+    return dt && !/^candidates$/i.test(dt) ? dt : null
+  }
+
   // Build the queue of profile pages for the background auto-iterator. Uses the
   // full NameCell href (keeps listQuery/legacyJobId params so the profile renders
   // when navigated to directly).
@@ -110,6 +128,7 @@
       payload: {
         source: 'indeed',
         platform_job_id,
+        platform_job_title: extractJobTitle(),
         candidates: fresh,
       },
     }, (response) => {

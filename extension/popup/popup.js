@@ -43,6 +43,76 @@ $('job-select').addEventListener('change', (e) => {
   chrome.storage.sync.set({ selectedJobId: e.target.value || null })
 })
 
+// ── Scrape job details from the current Indeed job page ─────────────────────
+// Injects the job scraper on demand (same pattern as the candidates fallback),
+// reads the title/description/pay, and POSTs them to /api/jobs/by-source so the
+// backend fills the job description and re-scores its candidates.
+$('job-scrape-btn').addEventListener('click', () => {
+  const hint = $('job-scrape-hint')
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0]
+    if (!tab?.id) return
+    if (!/^https:\/\/employers\.indeed\.com\//.test(tab.url || '')) {
+      hint.textContent = 'Open the job’s Indeed page first.'
+      return
+    }
+    hint.textContent = 'Scraping…'
+    chrome.scripting.executeScript(
+      { target: { tabId: tab.id }, files: ['content/indeed_job.js'] },
+      () => {
+        if (chrome.runtime.lastError) {
+          hint.textContent = 'Could not access this page. Reload and try again.'
+          return
+        }
+        chrome.tabs.sendMessage(tab.id, { type: 'GET_JOB_DETAILS' }, (res) => {
+          if (chrome.runtime.lastError || !res?.ok) {
+            hint.textContent = 'Could not read the job page.'
+            return
+          }
+          if (!res.description) {
+            hint.textContent = 'No job description found on this page.'
+            return
+          }
+          submitJobDetails(res, hint)
+        })
+      }
+    )
+  })
+})
+
+async function submitJobDetails(details, hint) {
+  const { apiUrl, selectedJobId } = await chrome.storage.sync.get(['apiUrl', 'selectedJobId'])
+  const base = apiUrl ?? 'http://localhost:3000'
+  const payload = {
+    description: details.description,
+    title: details.title ?? undefined,
+    location: details.location ?? undefined,
+    payRange: details.payRange ?? undefined,
+  }
+  if (selectedJobId) {
+    payload.job_id = selectedJobId
+  } else {
+    payload.platform = 'indeed'
+    payload.platform_job_id = details.platform_job_id ?? undefined
+  }
+  try {
+    const res = await fetch(`${base}/api/jobs/by-source`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      hint.textContent = err.error ?? `Save failed (HTTP ${res.status})`
+      return
+    }
+    const out = await res.json()
+    hint.textContent = `Saved “${out.job?.title ?? 'job'}” — re-scoring ${out.requeued} candidate(s).`
+  } catch {
+    hint.textContent = 'Backend unreachable.'
+  }
+}
+
 // ── Load sync stats ────────────────────────────────────────────────────────
 chrome.runtime.sendMessage({ type: 'GET_STATS' }, (response) => {
   if (chrome.runtime.lastError || !response?.ok) return
