@@ -8,6 +8,7 @@ import ScoreChip from '../components/ScoreChip'
 import PdfViewer from '../components/PdfViewer'
 import CandidateContextModal from '../components/CandidateContextModal'
 import { getProfileUrl } from '../utils/candidate'
+import { formatFlag } from '../utils/format'
 
 interface Props {
   candidate: Candidate
@@ -117,7 +118,7 @@ export default function CandidateDetail({ candidate: c, jobId, onBack }: Props) 
             <div className="flex flex-col gap-1">
               {flags.map((f, i) => (
                 <div key={i} className="text-sm text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                  ⚠ {f}
+                  ⚠ {formatFlag(f)}
                 </div>
               ))}
             </div>
