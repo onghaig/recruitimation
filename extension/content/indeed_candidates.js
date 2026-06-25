@@ -16,6 +16,13 @@
 ;(function () {
   'use strict'
 
+  // Guard against double-init: the popup injects this script on demand when SPA
+  // navigation lands on /candidates without a document load, and the static
+  // manifest injection may also have run. Re-running would stack a second
+  // MutationObserver and message listener.
+  if (window.__recruitimationCandidatesInit) return
+  window.__recruitimationCandidatesInit = true
+
   // ── Selectors ─────────────────────────────────────────────────────────────
   const ROW_SELECTOR      = '[data-testid="table-row"]'
   const NAME_SELECTOR     = '[data-testid="NameCell"]'        // <a role="link" href="/candidates/view?id=...">

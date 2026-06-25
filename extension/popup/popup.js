@@ -86,29 +86,48 @@ autoBtn.addEventListener('click', () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0]
     if (!tab?.id) return
-    // Ask the candidates-list content script for the profile queue.
-    chrome.tabs.sendMessage(tab.id, { type: 'GET_PROFILE_QUEUE' }, (res) => {
-      if (chrome.runtime.lastError || !res?.ok) {
-        autoHint.textContent = 'Open an Indeed candidates list first.'
-        return
-      }
-      const items = res.items || []
-      if (items.length === 0) {
-        autoHint.textContent = 'No candidates found on this page.'
-        return
-      }
-      chrome.runtime.sendMessage({ type: 'START_AUTO_INGEST', items }, (startRes) => {
-        if (chrome.runtime.lastError || !startRes?.ok) {
-          autoHint.textContent = startRes?.error ?? 'Could not start.'
-          return
-        }
-        setAutoRunning(true)
-        renderProgress(0, startRes.total)
-        pollProgress()
-      })
-    })
+    requestProfileQueue(tab, false)
   })
 })
+
+// Ask the candidates-list content script for the profile queue. If the script
+// isn't present (SPA navigation to /candidates never triggers a document-load
+// injection), inject it on demand and retry once.
+function requestProfileQueue(tab, injected) {
+  chrome.tabs.sendMessage(tab.id, { type: 'GET_PROFILE_QUEUE' }, (res) => {
+    if (chrome.runtime.lastError || !res?.ok) {
+      if (!injected && /^https:\/\/employers\.indeed\.com\/candidates/.test(tab.url || '')) {
+        chrome.scripting.executeScript(
+          { target: { tabId: tab.id }, files: ['content/indeed_candidates.js'] },
+          () => {
+            if (chrome.runtime.lastError) {
+              autoHint.textContent = 'Could not access this page. Reload and try again.'
+              return
+            }
+            requestProfileQueue(tab, true)
+          }
+        )
+        return
+      }
+      autoHint.textContent = 'Open an Indeed candidates list first.'
+      return
+    }
+    const items = res.items || []
+    if (items.length === 0) {
+      autoHint.textContent = 'No candidates found on this page.'
+      return
+    }
+    chrome.runtime.sendMessage({ type: 'START_AUTO_INGEST', items }, (startRes) => {
+      if (chrome.runtime.lastError || !startRes?.ok) {
+        autoHint.textContent = startRes?.error ?? 'Could not start.'
+        return
+      }
+      setAutoRunning(true)
+      renderProgress(0, startRes.total)
+      pollProgress()
+    })
+  })
+}
 
 autoCancel.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'CANCEL_AUTO_INGEST' }, () => {
