@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { Send, Clock, CheckCircle } from 'lucide-react'
 
@@ -49,14 +50,14 @@ export default function OutreachFlow() {
         <h2 className="text-lg font-semibold mb-4">Jump to a job's results</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {jobs.map((j) => (
-            <a
+            <Link
               key={j.id}
-              href={`/results/${j.id}`}
+              to={`/results/${j.id}`}
               className="card p-4 hover:shadow-md transition-shadow"
             >
               <h3 className="font-medium">{j.title}</h3>
               <p className="text-sm text-slate-500">{[j.location, j.payRange].filter(Boolean).join(' · ')}</p>
-            </a>
+            </Link>
           ))}
         </div>
       </div>
