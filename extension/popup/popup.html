@@ -35,15 +35,16 @@
     .stat-label { color: #64748b; }
     .stat-value { font-weight: 600; }
     label { display: block; font-weight: 500; margin-bottom: 4px; color: #475569; }
-    input {
+    input, select {
       width: 100%;
       padding: 8px 10px;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
       font-size: 13px;
       outline: none;
+      background: white;
     }
-    input:focus { border-color: #0284c7; }
+    input:focus, select:focus { border-color: #0284c7; }
     .input-row { margin-bottom: 12px; }
     button {
       width: 100%;
@@ -133,6 +134,12 @@
 
     <!-- Auto-ingest all candidates -->
     <div class="divider"></div>
+    <div class="input-row">
+      <label for="job-select">Target job</label>
+      <select id="job-select">
+        <option value="">Auto-detect from page</option>
+      </select>
+    </div>
     <button id="auto-btn">Auto-ingest all candidates</button>
     <button id="auto-cancel" class="btn-secondary" style="display:none">Cancel</button>
     <div class="progress-track" id="auto-track" style="display:none">

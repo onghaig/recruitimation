@@ -10,6 +10,37 @@ chrome.storage.sync.get(['apiUrl'], (result) => {
   $('api-url').value = url
   $('open-app').href = url
   checkApiStatus(url)
+  loadJobs(url)
+})
+
+// ── Job selector ────────────────────────────────────────────────────────────
+// Populate the dropdown from GET /api/jobs and remember the choice. When a job
+// is selected, the background worker stamps its id onto every ingest so
+// candidates attach to that exact job (with its real description for scoring),
+// instead of relying on the page's platform id matching an existing job.
+async function loadJobs(apiUrl) {
+  const select = $('job-select')
+  try {
+    const res = await fetch(`${apiUrl}/api/jobs`, { signal: AbortSignal.timeout(4000) })
+    if (!res.ok) return
+    const jobs = await res.json()
+    const { selectedJobId } = await chrome.storage.sync.get(['selectedJobId'])
+    // Keep the leading "Auto-detect" option, then one option per job.
+    select.length = 1
+    for (const job of jobs) {
+      const opt = document.createElement('option')
+      opt.value = job.id
+      opt.textContent = job.title
+      if (job.id === selectedJobId) opt.selected = true
+      select.appendChild(opt)
+    }
+  } catch {
+    // Backend unreachable — leave the dropdown at "Auto-detect from page".
+  }
+}
+
+$('job-select').addEventListener('change', (e) => {
+  chrome.storage.sync.set({ selectedJobId: e.target.value || null })
 })
 
 // ── Load sync stats ────────────────────────────────────────────────────────

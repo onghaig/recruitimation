@@ -16,6 +16,8 @@ const UpdateJobSchema = z.object({
   description: z.string().optional(),
   location: z.string().optional(),
   payRange: z.string().optional(),
+  platform: z.enum(['indeed', 'linkedin']).optional(),
+  platformId: z.string().optional(),
   status: z.enum(['open', 'closed', 'paused']).optional(),
 })
 

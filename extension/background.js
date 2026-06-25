@@ -193,8 +193,16 @@ async function runAutoIngest(items) {
 }
 
 async function handleIngest(payload) {
+  // If the popup has a job selected, attach every candidate to that exact job
+  // (its real description drives scoring). Falls back to the page's platform id
+  // when no job is chosen ("Auto-detect from page").
+  if (!payload.job_id) {
+    const { selectedJobId } = await chrome.storage.sync.get(['selectedJobId'])
+    if (selectedJobId) payload = { ...payload, job_id: selectedJobId }
+  }
   console.log(
-    `[Recruitimation/Background] Ingesting ${payload.candidates.length} candidates from ${payload.source}`
+    `[Recruitimation/Background] Ingesting ${payload.candidates.length} candidates from ${payload.source}` +
+      (payload.job_id ? ` → job ${payload.job_id}` : '')
   )
   return ingest(payload)
 }

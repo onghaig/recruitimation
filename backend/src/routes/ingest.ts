@@ -27,7 +27,12 @@ export async function ingestRoutes(fastify: FastifyInstance) {
   fastify.post('/api/ingest', async (req, reply) => {
     const body = IngestBodySchema.parse(req.body)
 
-    // Resolve job_id from platform_job_id if not provided directly
+    // Resolve job_id: prefer the explicit internal id (set by the popup's job
+    // selector), then look up by platform id. If nothing matches, auto-create a
+    // stub job so candidates attach to *something* instead of orphaning with a
+    // null jobId (orphans are invisible in the dashboard and never scored). The
+    // stub has a blank description, so the scorer skips it until the recruiter
+    // fills in the real job description and re-scores.
     let jobId = body.job_id
     if (!jobId && body.platform_job_id) {
       const job = await prisma.job.findFirst({
@@ -37,6 +42,18 @@ export async function ingestRoutes(fastify: FastifyInstance) {
         },
       })
       jobId = job?.id
+
+      if (!jobId) {
+        const stub = await prisma.job.create({
+          data: {
+            title: `${body.source} job ${body.platform_job_id}`,
+            description: '',
+            platform: body.source,
+            platformId: body.platform_job_id,
+          },
+        })
+        jobId = stub.id
+      }
     }
 
     const results = []
