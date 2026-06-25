@@ -75,6 +75,8 @@ export interface AtsLog {
 
 export interface ParseResult {
   candidateId?: string
+  jobId?: string
+  jobCreated?: boolean
   parsed: {
     name: string | null
     email: string | null

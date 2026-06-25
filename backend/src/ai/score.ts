@@ -99,14 +99,17 @@ similar pay history.
 
 Use the FULL 0-100 range for both scores and spread candidates out — do not cluster everyone in
 the 70s. In flags, add "lacks required <X>" for each unmet required item and "irrelevant
-experience" when the background is in an unrelated field.
+experience" when the background is in an unrelated field. Keep "reasoning" to at most two short
+sentences so the JSON stays compact.
 
 Return JSON only — no prose before or after:
 { "match_score": number, "willing_score": number, "flags": string[], "reasoning": string }`
 
   const message = await openai.chat.completions.create({
     model: 'meta/llama-3.3-70b-instruct',
-    max_tokens: 512,
+    // Generous so the reasoning string can't truncate the JSON (which would fail
+    // the parse and fall back to a 0/0 "scoring_unavailable" score).
+    max_tokens: 768,
     messages: [{ role: 'user', content: prompt }],
   })
 

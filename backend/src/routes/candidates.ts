@@ -60,32 +60,47 @@ export async function candidateRoutes(fastify: FastifyInstance) {
     })
     const matchScore = score.match_score
 
-    // Optionally persist
-    let candidateId: string | undefined
-    if (body.jobId) {
-      const candidate = await prisma.candidate.create({
+    // Resolve the job: use the selected one, or auto-create it from the entered
+    // details so a freshly-parsed candidate (and its new job) always show up in
+    // the Jobs/Results tabs.
+    let jobId = body.jobId
+    let jobCreated = false
+    if (!jobId) {
+      const job = await prisma.job.create({
         data: {
-          jobId: body.jobId,
-          source: 'paste',
-          name: parsed.name,
-          email: parsed.email,
-          phone: parsed.phone,
-          location: parsed.location,
-          rawText: body.rawText,
-          jobsJson: parsed.jobs,
-          skillsJson: parsed.skills,
-          matchScore,
-          willingScore: score.willing_score,
-          aiSummary,
-          flagsJson: score.flags,
-          scoredAt: new Date(),
+          title: body.jobTitle,
+          description: body.jobDescription,
+          location: body.jobLocation,
+          payRange: body.jobPayRange,
         },
       })
-      candidateId = candidate.id
+      jobId = job.id
+      jobCreated = true
     }
 
+    const candidate = await prisma.candidate.create({
+      data: {
+        jobId,
+        source: 'paste',
+        name: parsed.name,
+        email: parsed.email,
+        phone: parsed.phone,
+        location: parsed.location,
+        rawText: body.rawText,
+        jobsJson: parsed.jobs,
+        skillsJson: parsed.skills,
+        matchScore,
+        willingScore: score.willing_score,
+        aiSummary,
+        flagsJson: score.flags,
+        scoredAt: new Date(),
+      },
+    })
+
     return {
-      candidateId,
+      candidateId: candidate.id,
+      jobId,
+      jobCreated,
       parsed,
       matchScore,
       willingScore: score.willing_score,
@@ -244,4 +259,19 @@ export async function candidateRoutes(fastify: FastifyInstance) {
 
     return reply.status(201).send(decision)
   })
+
+  // DELETE /api/candidates/:id/decision — undo: remove the latest decision for
+  // this candidate (optionally scoped to a job), so it returns to "undecided".
+  fastify.delete<{ Params: { id: string }; Querystring: { jobId?: string } }>(
+    '/api/candidates/:id/decision',
+    async (req) => {
+      const { id } = req.params
+      const latest = await prisma.decision.findFirst({
+        where: { candidateId: id, ...(req.query.jobId ? { jobId: req.query.jobId } : {}) },
+        orderBy: { decidedAt: 'desc' },
+      })
+      if (latest) await prisma.decision.delete({ where: { id: latest.id } })
+      return { ok: true, removed: !!latest }
+    },
+  )
 }

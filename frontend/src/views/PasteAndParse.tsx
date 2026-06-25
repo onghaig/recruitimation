@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Zap, CheckCircle, Layers, Users, FileText, X, History, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '../api/client'
@@ -9,10 +9,6 @@ import ScoreChip from '../components/ScoreChip'
 import DocumentDropzone from '../components/DocumentDropzone'
 import { useIngestHistory, type IngestHistoryEntry } from '../hooks/useIngestHistory'
 import { useCandidateCount } from '../hooks/useCandidateCount'
-
-function fileBaseName(name: string): string {
-  return name.replace(/\.[^.]+$/, '')
-}
 
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000)
@@ -81,6 +77,8 @@ export default function PasteAndParse() {
   const [batchFiles, setBatchFiles] = useState<FileExtract[]>([])
   const { history, add: addHistory, clear: clearHistory } = useIngestHistory()
 
+  const qc = useQueryClient()
+
   const { data: jobs = [] } = useQuery({
     queryKey: ['jobs'],
     queryFn: api.jobs.list,
@@ -108,14 +106,21 @@ export default function PasteAndParse() {
       }),
     onSuccess: (data) => {
       setResult(data)
+      // A new job was auto-created from the entered details — surface it in the
+      // Jobs tab and select it so further parses reuse it (no duplicate jobs).
+      if (data.jobCreated && data.jobId) {
+        qc.invalidateQueries({ queryKey: ['jobs'] })
+        setSelectedJobId(data.jobId)
+      }
       addHistory({
         type: 'single',
+        jobId: data.jobId,
         jobTitle: resolvedTitle(),
         candidateName: data.parsed.name ?? 'Unknown',
         matchScore: data.matchScore,
         willingScore: data.willingScore,
       })
-      toast.success('Parsed and scored!')
+      toast.success(data.jobCreated ? 'Parsed, scored & job created!' : 'Parsed and scored!')
     },
     onError: (err) => toast.error(err.message),
   })
@@ -127,7 +132,9 @@ export default function PasteAndParse() {
       api.candidates.ingest({
         source: 'paste',
         job_id: selectedJobId,
-        candidates: okBatchFiles.map((f) => ({ raw_text: f.text, name: fileBaseName(f.name) })),
+        // Don't send the filename as the name — let the worker's parse extract
+        // the real name from the résumé text (it only backfills when name is empty).
+        candidates: okBatchFiles.map((f) => ({ raw_text: f.text })),
       }),
     onSuccess: (data) => {
       setBatchFiles([])
