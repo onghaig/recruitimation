@@ -21,14 +21,6 @@
 
   injectInterceptor()
 
-  // Enable dev logging in the interceptor
-  if (process?.env?.NODE_ENV === 'development') {
-    const devScript = document.createElement('script')
-    devScript.textContent = 'window.__recruitimation_dev = true'
-    document.documentElement.appendChild(devScript)
-    devScript.remove()
-  }
-
   // ── Listen for candidate batches from interceptor ──────────────────────────
   window.addEventListener('message', (event) => {
     if (
