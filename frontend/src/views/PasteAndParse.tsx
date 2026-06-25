@@ -9,6 +9,7 @@ import ScoreChip from '../components/ScoreChip'
 import DocumentDropzone from '../components/DocumentDropzone'
 import { useIngestHistory, type IngestHistoryEntry } from '../hooks/useIngestHistory'
 import { useCandidateCount } from '../hooks/useCandidateCount'
+import { formatFlag } from '../utils/format'
 
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000)
@@ -87,8 +88,9 @@ export default function PasteAndParse() {
   const resolvedTitle = () => jobs.find((j) => j.id === selectedJobId)?.title ?? jobTitle
 
   const parseMutation = useMutation({
-    mutationFn: () =>
-      api.candidates.parse({
+    mutationFn: async () => {
+      const titleAtStart = resolvedTitle()
+      const data = await api.candidates.parse({
         rawText,
         jobDescription: selectedJobId
           ? jobs.find((j) => j.id === selectedJobId)?.description ?? jobDescription
@@ -103,7 +105,20 @@ export default function PasteAndParse() {
           ? jobs.find((j) => j.id === selectedJobId)?.payRange ?? jobPayRange
           : jobPayRange,
         jobId: selectedJobId || undefined,
-      }),
+      })
+      // Record history here (not in onSuccess) so it persists to localStorage
+      // even if the user navigates away before the parse finishes — the mutation
+      // promise runs to completion regardless of whether the view is mounted.
+      addHistory({
+        type: 'single',
+        jobId: data.jobId,
+        jobTitle: titleAtStart,
+        candidateName: data.parsed.name ?? 'Unknown',
+        matchScore: data.matchScore,
+        willingScore: data.willingScore,
+      })
+      return data
+    },
     onSuccess: (data) => {
       setResult(data)
       // A new job was auto-created from the entered details — surface it in the
@@ -112,14 +127,6 @@ export default function PasteAndParse() {
         qc.invalidateQueries({ queryKey: ['jobs'] })
         setSelectedJobId(data.jobId)
       }
-      addHistory({
-        type: 'single',
-        jobId: data.jobId,
-        jobTitle: resolvedTitle(),
-        candidateName: data.parsed.name ?? 'Unknown',
-        matchScore: data.matchScore,
-        willingScore: data.willingScore,
-      })
       toast.success(data.jobCreated ? 'Parsed, scored & job created!' : 'Parsed and scored!')
     },
     onError: (err) => toast.error(err.message),
@@ -399,7 +406,7 @@ export default function PasteAndParse() {
               <div className="flex flex-col gap-1">
                 {result.flags.map((f, i) => (
                   <div key={i} className="text-sm text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                    ⚠ {f}
+                    ⚠ {formatFlag(f)}
                   </div>
                 ))}
               </div>
